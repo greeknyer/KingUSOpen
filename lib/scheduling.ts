@@ -285,9 +285,12 @@ export function fillDay(ctx: FillDayContext): DayResult {
   const unclaimed = new Set(free.map(e => e.id))
   const staffable: DaySlot[] = []
   for (const slot of ordered) {
-    const candidate = [...ctx.staff]
-      .sort(pickOrder(slot.location))
-      .find(e => unclaimed.has(e.id) && eligibleFor(e, slot) && ctx.underCap(e))
+    // Same choice pass 2 will make, so the two agree about what is coverable.
+    const candidate = pickWithoutStranding(
+      ctx.staff
+        .filter(e => unclaimed.has(e.id) && eligibleFor(e, slot) && ctx.underCap(e))
+        .sort(pickOrder(slot.location))
+    )
     if (!candidate) continue
     unclaimed.delete(candidate.id)
     staffable.push(slot)
@@ -299,23 +302,54 @@ export function fillDay(ctx: FillDayContext): DayResult {
 
   // Pass 2 fills them in the same order, so opens and closes are staffed before
   // mids and the two passes agree about what is coverable.
-  for (const slot of staffable) {
+  for (let i = 0; i < staffable.length; i++) {
+    const slot = staffable[i]
     const eligible = ctx.staff
-      .filter(e => eligibleFor(e, slot) && ctx.underCap(e))
+      .filter(e => !assignedToday.has(e.id) && eligibleFor(e, slot) && ctx.underCap(e))
       .sort(pickOrder(slot.location))
 
-    // Chef prefers a manager among those who can cook; everywhere else a
-    // manager is the fallback, so they stay free to float.
-    const pool = slot.isChef
-      ? [...eligible.filter(e => e.is_manager), ...eligible.filter(e => !e.is_manager)]
-      : [...eligible.filter(e => !e.is_manager), ...eligible.filter(e => e.is_manager)]
+    // A manager is the fallback everywhere, including the kitchen, so they stay
+    // free to float. Chef used to prefer a manager outright, which meant a
+    // manager who could cook took the kitchen every day and the actual chef —
+    // whose only skill it is — was never scheduled at all.
+    const pool = [...eligible.filter(e => !e.is_manager), ...eligible.filter(e => e.is_manager)]
 
-    const emp = pool.find(e => !assignedToday.has(e.id))
+    const emp = pickWithoutStranding(pool)
     if (!emp) {
       unfilled++
       continue
     }
     place(emp, slot.location, slot.position, slot.slotOrder, slot.start, slot.end, false)
+  }
+
+  /** Slots anywhere in the day this person could be placed in at all. */
+  function placesInDay(e: Employee): number {
+    return ctx.slots.filter(
+      s => !coveredPositions.has(`${s.location}:${s.position}`) && eligibleFor(e, s)
+    ).length
+  }
+
+  /**
+   * The best candidate for a slot, protecting anyone who has only one place to
+   * be in the whole day.
+   *
+   * Hours decide who works, which is what keeps the registers even. But the
+   * chef's only skill is chef, so the kitchen is the single slot he can fill;
+   * hand it to whoever happens to be behind on hours and he works nowhere at
+   * all. A specialist losing their one slot isn't a fairness trade, it's a
+   * person going home.
+   *
+   * The guard is deliberately limited to exactly that — one place in the day.
+   * Someone available only for PM still has every PM slot open to them and is
+   * NOT protected here: sorting everyone by how boxed in they are is what left
+   * the most available staff with the least work, and slot ordering already
+   * fills scarce slots while their few takers are free.
+   */
+  function pickWithoutStranding(pool: Employee[]): Employee | undefined {
+    const best = pool[0]
+    if (!best) return undefined
+    if (placesInDay(best) <= 1) return best // it's their one place too
+    return pool.find(e => placesInDay(e) <= 1) ?? best
   }
 
   return { placements, unfilled }
