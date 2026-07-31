@@ -19,6 +19,7 @@ one is harmless.
 | `005_availability_shifts` | shift-level availability overrides |
 | `006_full_day_staff` | staff who work open to close |
 | `007_availability_full_day` | full days as a per-date override |
+| `008_retire_prep_4` | drops the fourth prep position |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -97,7 +98,7 @@ hours.
 
 ### Positions
 
-**Food Village (10)** — Register 1–4, Prep 1–4, Chef, Salads. Register 4 is
+**Food Village (9)** — Register 1–4, Prep 1–3, Chef, Salads. Register 4 is
 switchable per period.
 **Stadium (2)** — Register, Prep.
 
@@ -124,7 +125,7 @@ a full day for one date.
 ### Managers
 
 - **General Manager** — runs Food Village from **outside** the position grid, so
-  all ten positions still need staffing. Shown as a banner on the schedule.
+  all nine positions still need staffing. Shown as a banner on the schedule.
 - **Stadium Manager** — fixed at the Stadium for the tournament, floats between
   Register and Prep, works open to close.
 - Anyone else with the manager flag is scheduled normally.

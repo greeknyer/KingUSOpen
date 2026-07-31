@@ -158,6 +158,9 @@ export interface Availability {
 
 export type Position =
   | 'register_1' | 'register_2' | 'register_3' | 'register_4'
+  // prep_4 is retired — the Food Village runs three prep positions. Kept in
+  // the union and in POSITION_SKILL so any assignment written before the
+  // change still resolves rather than throwing.
   | 'prep_1' | 'prep_2' | 'prep_3' | 'prep_4'
   | 'chef' | 'salads'
   | 'stadium_register' | 'stadium_prep'
@@ -199,7 +202,6 @@ export const FOOD_VILLAGE_POSITIONS: { id: Position; label: string; section: str
   { id: 'prep_1', label: 'Prep 1', section: 'Prep' },
   { id: 'prep_2', label: 'Prep 2', section: 'Prep' },
   { id: 'prep_3', label: 'Prep 3', section: 'Prep' },
-  { id: 'prep_4', label: 'Prep 4', section: 'Prep' },
   { id: 'chef', label: 'Chef', section: 'Kitchen' },
   { id: 'salads', label: 'Salads', section: 'Kitchen' },
 ]

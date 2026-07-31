@@ -47,7 +47,7 @@ season and the whole app rolls over.
 
 Two stands are scheduled:
 
-- **Food Village** — 10 positions (Registers 1–4, Prep 1–4, Chef, Salads) across
+- **Food Village** — 9 positions (Registers 1–4, Prep 1–3, Chef, Salads) across
   three overlapping shifts a day: AM (10–4), MID (12–close) and PM (4–close), so
   two people cover each position through the peak. Register 4 switches on and
   off per period.
