@@ -247,11 +247,15 @@ export default function AvailabilityGrid({
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+      {/* Scrolls in both directions with the day header and the name column
+          pinned, so it stays obvious which day and which person a cell belongs
+          to once the grid is taller or wider than the screen. */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-auto max-h-[calc(100vh-19rem)] min-h-[14rem] overscroll-contain">
         <table className="w-full min-w-max">
           <thead>
-            <tr className="border-b border-gray-100">
-              <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2.5 w-44 sticky left-0 bg-white">
+            <tr>
+              {/* Corner cell outranks both so neither scrolls over it. */}
+              <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2.5 w-44 sticky top-0 left-0 z-30 bg-white shadow-[inset_0_-1px_0_rgb(229,231,235)]">
                 Employee
               </th>
               {currentDates.map(date => {
@@ -260,8 +264,9 @@ export default function AvailabilityGrid({
                 return (
                   <th
                     key={date}
-                    className={`text-center text-xs font-semibold px-2 py-2.5 min-w-[70px] ${
-                      weekend ? 'text-gray-400 bg-gray-50/60' : 'text-gray-500'
+                    // Opaque background is load-bearing: rows scroll underneath.
+                    className={`text-center text-xs font-semibold px-2 py-2.5 min-w-[70px] sticky top-0 z-20 shadow-[inset_0_-1px_0_rgb(229,231,235)] ${
+                      weekend ? 'text-gray-400 bg-gray-50' : 'text-gray-500 bg-white'
                     }`}
                   >
                     <div>{DAY_LABELS[weekdayIndex(date)]}</div>
@@ -274,7 +279,7 @@ export default function AvailabilityGrid({
           <tbody>
             {employees.map(emp => (
               <tr key={emp.id} className="border-t border-gray-50">
-                <td className="px-4 py-2 sticky left-0 bg-white">
+                <td className="px-4 py-2 sticky left-0 z-10 bg-white shadow-[inset_-1px_0_0_rgb(243,244,246)]">
                   <div className="text-sm font-semibold text-gray-900">{emp.name}</div>
                   {emp.is_manager && (
                     <div className="text-[11px] text-purple-600 font-bold uppercase">MGR</div>
