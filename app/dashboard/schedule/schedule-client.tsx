@@ -1,0 +1,469 @@
+'use client'
+
+import { useState, useTransition } from 'react'
+import {
+  Employee, ScheduleAssignment, TournamentSettings, StadiumOpenDay, Register4Config,
+  FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position
+} from '@/lib/types'
+import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
+
+const PERIOD_LABELS = ['Pre-tournament', 'Week 1', 'Week 2', 'Week 3']
+
+function AssignmentModal({
+  date,
+  location,
+  position,
+  slotOrder,
+  year,
+  existing,
+  employees,
+  onClose,
+}: {
+  date: string
+  location: string
+  position: Position
+  slotOrder: number
+  year: number
+  existing?: ScheduleAssignment
+  employees: Employee[]
+  onClose: () => void
+}) {
+  const [pending, startTransition] = useTransition()
+  const [empId, setEmpId] = useState(existing?.employee_id ?? '')
+  const [start, setStart] = useState(existing?.planned_start?.slice(0, 5) ?? '')
+  const [end, setEnd] = useState(existing?.planned_end?.slice(0, 5) ?? '')
+
+  function handleSave() {
+    startTransition(async () => {
+      await saveAssignment({
+        id: existing?.id,
+        year,
+        date,
+        location,
+        position,
+        slot_order: slotOrder,
+        employee_id: empId || null,
+        planned_start: start || null,
+        planned_end: end || null,
+        status: 'draft',
+      })
+      onClose()
+    })
+  }
+
+  function handleRemove() {
+    if (!existing) return
+    startTransition(async () => {
+      await removeAssignment(existing.id)
+      onClose()
+    })
+  }
+
+  const d = new Date(date + 'T00:00:00')
+  const posLabel = [...FOOD_VILLAGE_POSITIONS, ...STADIUM_POSITIONS].find(p => p.id === position)?.label ?? position
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-bold text-gray-900">{posLabel} · Slot {slotOrder}</h2>
+            <p className="text-xs text-gray-400">{d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Employee</label>
+            <select
+              value={empId}
+              onChange={e => setEmpId(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            >
+              <option value="">— Unassigned —</option>
+              {employees.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.name} {e.role === 'manager' ? '(MGR)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">Start time</label>
+              <input
+                type="time"
+                value={start}
+                onChange={e => setStart(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1">End time (blank = close)</label>
+              <input
+                type="time"
+                value={end}
+                onChange={e => setEnd(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={handleSave}
+            disabled={pending}
+            className="flex-1 bg-gray-900 text-white text-sm font-semibold rounded-lg py-2.5 hover:bg-gray-800 disabled:opacity-50 transition"
+          >
+            {pending ? 'Saving…' : 'Save'}
+          </button>
+          {existing && (
+            <button
+              onClick={handleRemove}
+              disabled={pending}
+              className="px-4 bg-red-50 text-red-600 text-sm font-semibold rounded-lg py-2.5 hover:bg-red-100 disabled:opacity-50 transition"
+            >
+              Remove
+            </button>
+          )}
+          <button onClick={onClose} className="px-4 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 transition">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SlotCell({
+  date, location, position, slotOrder, assignment, employees, onOpen
+}: {
+  date: string
+  location: string
+  position: Position
+  slotOrder: number
+  assignment?: ScheduleAssignment
+  employees: Employee[]
+  onOpen: () => void
+}) {
+  const emp = assignment?.employee_id ? employees.find(e => e.id === assignment.employee_id) : null
+
+  return (
+    <button
+      onClick={onOpen}
+      className={`w-full text-left px-2 py-1.5 rounded-lg text-[11px] transition border ${
+        assignment
+          ? assignment.status === 'published'
+            ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
+            : 'bg-blue-50 border-blue-100 hover:bg-blue-100'
+          : 'bg-gray-50 border-dashed border-gray-200 hover:bg-gray-100'
+      }`}
+    >
+      {assignment && emp ? (
+        <div>
+          <div className="font-semibold text-gray-800 truncate">{emp.name}</div>
+          <div className="text-gray-500">
+            {formatTime(assignment.planned_start)} → {formatTime(assignment.planned_end)}
+          </div>
+        </div>
+      ) : (
+        <span className="text-gray-300">+ Add</span>
+      )}
+    </button>
+  )
+}
+
+export default function ScheduleClient({
+  employees,
+  assignments: initialAssignments,
+  settings,
+  stadiumOpenDays,
+  register4Configs,
+}: {
+  employees: Employee[]
+  assignments: ScheduleAssignment[]
+  settings: TournamentSettings
+  stadiumOpenDays: StadiumOpenDay[]
+  register4Configs: Register4Config[]
+}) {
+  const [activePeriod, setActivePeriod] = useState(1) // Default to week 1
+  const [pending, startTransition] = useTransition()
+  const [message, setMessage] = useState('')
+  const [modal, setModal] = useState<{
+    date: string; location: string; position: Position; slotOrder: number; existing?: ScheduleAssignment
+  } | null>(null)
+
+  const { preTournament, week1, week2, week3 } = getTournamentDates(settings)
+  const periodDates = [preTournament, week1, week2, week3]
+  const currentDates = periodDates[activePeriod]
+  const year = settings.year
+
+  // Build open days set for current period
+  const stadiumOpenSet = new Set<string>()
+  stadiumOpenDays.forEach(d => {
+    if (d.year === year && d.is_open) {
+      // Determine the actual date for this day_index in this period
+      const dates = periodDates[d.period]
+      if (dates && d.day_index < dates.length) {
+        stadiumOpenSet.add(dates[d.day_index])
+      }
+    }
+  })
+
+  const reg4ActiveSet = new Set<string>()
+  register4Configs.forEach(r => {
+    if (r.year === year && r.is_active) {
+      const dates = periodDates[r.period]
+      if (dates) dates.forEach(d => reg4ActiveSet.add(d))
+    }
+  })
+
+  function getAssignments(date: string, location: string, position: string): ScheduleAssignment[] {
+    return initialAssignments.filter(a =>
+      a.date === date && a.location === location && a.position === position
+    ).sort((a, b) => a.slot_order - b.slot_order)
+  }
+
+  const hasDraft = initialAssignments.some(a => currentDates.includes(a.date) && a.status === 'draft')
+
+  function handleAutoSchedule() {
+    setMessage('')
+    const stadiumOpenDates = [...stadiumOpenSet].filter(d => currentDates.includes(d))
+    const reg4Dates = [...reg4ActiveSet].filter(d => currentDates.includes(d))
+    startTransition(async () => {
+      try {
+        const { count } = await autoSchedulePeriod(currentDates, year, stadiumOpenDates, reg4Dates)
+        setMessage(`Generated ${count} assignments as draft.`)
+      } catch (e) {
+        setMessage(`Error: ${e instanceof Error ? e.message : 'Unknown'}`)
+      }
+    })
+  }
+
+  function handlePublish() {
+    setMessage('')
+    startTransition(async () => {
+      await publishPeriod(currentDates)
+      setMessage('Published!')
+    })
+  }
+
+  function handleClearDraft() {
+    if (!confirm('Clear all draft entries for this period?')) return
+    startTransition(async () => {
+      await clearDraftPeriod(currentDates)
+      setMessage('Draft cleared.')
+    })
+  }
+
+  function formatDateHeader(date: string) {
+    const d = new Date(date + 'T00:00:00')
+    return {
+      weekday: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      date: d.getDate(),
+      month: d.toLocaleDateString('en-US', { month: 'short' }),
+    }
+  }
+
+  return (
+    <div>
+      {/* Period + Controls */}
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {PERIOD_LABELS.map((label, i) => (
+            <button key={i} onClick={() => setActivePeriod(i)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                activePeriod === i ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 text-xs text-gray-500 mr-1">
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-200 inline-block"></span>Draft</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-300 inline-block"></span>Published</span>
+          </div>
+          <button onClick={handleAutoSchedule} disabled={pending}
+            className="px-3.5 py-2 bg-gray-900 text-white text-xs font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50 transition">
+            {pending ? 'Working…' : '⚡ Auto-Schedule'}
+          </button>
+          {hasDraft && (
+            <>
+              <button onClick={handlePublish} disabled={pending}
+                className="px-3.5 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition">
+                Publish
+              </button>
+              <button onClick={handleClearDraft} disabled={pending}
+                className="px-3.5 py-2 border border-gray-200 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-50 disabled:opacity-50 transition">
+                Clear Draft
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {message && (
+        <div className="mb-4 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-700">{message}</div>
+      )}
+
+      {/* Food Village Grid */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
+        <div className="px-5 py-3 border-b border-gray-100 bg-amber-50">
+          <span className="text-sm font-bold text-amber-900">Food Village</span>
+          <span className="text-xs text-amber-600 ml-2">Opens 10am</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px]">
+            <thead>
+              <tr className="border-b border-gray-50">
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2 w-24 sticky left-0 bg-white">Position</th>
+                <th className="text-left text-xs font-semibold text-gray-400 px-2 py-2 w-14">Slot</th>
+                {currentDates.map(date => {
+                  const { weekday, date: d, month } = formatDateHeader(date)
+                  return (
+                    <th key={date} className="text-center text-xs px-1 py-2 font-semibold text-gray-500 min-w-[110px]">
+                      {weekday} {month} {d}
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {FOOD_VILLAGE_POSITIONS.map(pos => {
+                const isReg4 = pos.id === 'register_4'
+                return [1, 2].map(slotOrder => {
+                  const isFirstSlot = slotOrder === 1
+                  return (
+                    <tr key={`${pos.id}-${slotOrder}`} className={`border-t ${isFirstSlot ? 'border-gray-100' : 'border-gray-50'}`}>
+                      {isFirstSlot && (
+                        <td rowSpan={2} className="px-4 py-1 align-middle sticky left-0 bg-white">
+                          <div className="text-xs font-semibold text-gray-700">{pos.label}</div>
+                          {isReg4 && <div className="text-[10px] text-gray-400">configurable</div>}
+                        </td>
+                      )}
+                      <td className="px-2 py-1">
+                        <span className="text-[10px] text-gray-400 font-medium">#{slotOrder}</span>
+                      </td>
+                      {currentDates.map(date => {
+                        // Check if register 4 is active for this date
+                        if (isReg4 && !reg4ActiveSet.has(date)) {
+                          return isFirstSlot ? (
+                            <td key={date} rowSpan={2} className="px-1 py-1 align-middle">
+                              <div className="min-h-[28px] rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
+                                <span className="text-[10px] text-gray-300">Inactive</span>
+                              </div>
+                            </td>
+                          ) : null
+                        }
+                        const existing = getAssignments(date, 'food_village', pos.id).find(a => a.slot_order === slotOrder)
+                        return (
+                          <td key={date} className="px-1 py-1">
+                            <SlotCell
+                              date={date}
+                              location="food_village"
+                              position={pos.id}
+                              slotOrder={slotOrder}
+                              assignment={existing}
+                              employees={employees}
+                              onOpen={() => setModal({ date, location: 'food_village', position: pos.id, slotOrder, existing })}
+                            />
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Stadium Grid */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 bg-blue-50">
+          <span className="text-sm font-bold text-blue-900">Stadium</span>
+          <span className="text-xs text-blue-600 ml-2">Opens 10:30am</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px]">
+            <thead>
+              <tr className="border-b border-gray-50">
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2 w-28 sticky left-0 bg-white">Position</th>
+                <th className="text-left text-xs font-semibold text-gray-400 px-2 py-2 w-14">Slot</th>
+                {currentDates.map(date => {
+                  const { weekday, date: d, month } = formatDateHeader(date)
+                  const isOpen = stadiumOpenSet.has(date)
+                  return (
+                    <th key={date} className={`text-center text-xs px-1 py-2 font-semibold min-w-[110px] ${isOpen ? 'text-gray-500' : 'text-gray-300'}`}>
+                      {weekday} {month} {d}
+                      {!isOpen && <div className="text-[9px] text-gray-300 font-normal">CLOSED</div>}
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {STADIUM_POSITIONS.map(pos => {
+                return [1, 2].map(slotOrder => {
+                  const isFirstSlot = slotOrder === 1
+                  return (
+                    <tr key={`${pos.id}-${slotOrder}`} className={`border-t ${isFirstSlot ? 'border-gray-100' : 'border-gray-50'}`}>
+                      {isFirstSlot && (
+                        <td rowSpan={2} className="px-4 py-1 align-middle sticky left-0 bg-white">
+                          <div className="text-xs font-semibold text-gray-700">{pos.label}</div>
+                        </td>
+                      )}
+                      <td className="px-2 py-1">
+                        <span className="text-[10px] text-gray-400 font-medium">#{slotOrder}</span>
+                      </td>
+                      {currentDates.map(date => {
+                        if (!stadiumOpenSet.has(date)) {
+                          return isFirstSlot ? (
+                            <td key={date} rowSpan={2} className="px-1 py-1 align-middle">
+                              <div className="min-h-[28px] rounded-lg bg-gray-50 border border-dashed border-gray-100 flex items-center justify-center">
+                                <span className="text-[10px] text-gray-200">CLOSED</span>
+                              </div>
+                            </td>
+                          ) : null
+                        }
+                        const existing = getAssignments(date, 'stadium', pos.id).find(a => a.slot_order === slotOrder)
+                        return (
+                          <td key={date} className="px-1 py-1">
+                            <SlotCell
+                              date={date}
+                              location="stadium"
+                              position={pos.id}
+                              slotOrder={slotOrder}
+                              assignment={existing}
+                              employees={employees}
+                              onOpen={() => setModal({ date, location: 'stadium', position: pos.id, slotOrder, existing })}
+                            />
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {modal && (
+        <AssignmentModal
+          {...modal}
+          year={year}
+          employees={employees}
+          onClose={() => setModal(null)}
+        />
+      )}
+    </div>
+  )
+}
