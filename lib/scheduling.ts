@@ -25,10 +25,20 @@ export interface PickContext {
   shiftOptions: (e: Employee) => number
   /** Hours already assigned to them this period. */
   hours: (e: Employee) => number
+  /** Days still owed against an agreed number; 0 for everyone else. */
+  owed: (e: Employee) => number
 }
 
 /**
- * Who should fill a slot, best first: whoever has worked least.
+ * Who should fill a slot, best first.
+ *
+ * Anyone still owed days against an agreed number comes first, most owed first.
+ * Some staff return every year on a deal for a set number of days, and a deal
+ * is precisely not an even share — so it is settled before the even share is
+ * worked out. Once someone reaches their number their debt is zero and they
+ * join everyone else, ranked on hours like anybody without an arrangement.
+ *
+ * After that: whoever has worked least.
  *
  * This used to sort by how boxed in someone was BEFORE looking at hours, to
  * stop a flexible colleague taking the only slot a PM-only person could work.
@@ -45,6 +55,9 @@ export interface PickContext {
  */
 export function pickBest(ctx: PickContext) {
   return (a: Employee, b: Employee): number => {
+    const oa = ctx.owed(a)
+    const ob = ctx.owed(b)
+    if (oa !== ob) return ob - oa // most owed first
     const ha = ctx.hours(a)
     const hb = ctx.hours(b)
     if (ha !== hb) return ha - hb
@@ -122,6 +135,8 @@ export interface FillDayContext {
   canLocation: (e: Employee, location: Location) => boolean
   underCap: (e: Employee) => boolean
   hoursSoFar: (e: Employee) => number
+  /** Days still owed this period against an agreed number; 0 if no arrangement. */
+  daysOwed: (e: Employee) => number
   /** Fixed at the Stadium for the tournament, placed before anyone else. */
   stadiumManager?: Employee
 }
@@ -262,6 +277,10 @@ export function fillDay(ctx: FillDayContext): DayResult {
     return pickBest({
       shiftOptions: (e: Employee) => shiftOptions(e, location),
       hours,
+      // A day already placed here counts against the debt, so two people on
+      // deals don't both stay top of the list for the rest of the day.
+      owed: (e: Employee) =>
+        Math.max(0, ctx.daysOwed(e) - (assignedToday.has(e.id) ? 1 : 0)),
     })
   }
 

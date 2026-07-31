@@ -275,23 +275,41 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         <input type="hidden" name="weekly_availability" value={JSON.stringify(avail)} />
       </div>
 
-      <div>
-        <label className="block text-sm font-semibold text-gray-500 mb-1.5">
-          Max shifts per week
-        </label>
-        <input
-          type="number"
-          name="max_shifts_per_week"
-          min={1}
-          max={21}
-          placeholder="No limit"
-          defaultValue={employee?.max_shifts_per_week ?? ''}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
-        <p className="text-xs text-gray-400 mt-1">
-          Leave blank for no limit. Counted per period, so Week 1, Week 2 and Week 3 each
-          get their own allowance. Does not apply to managers — they work the hours they
-          have.
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-semibold text-gray-500 mb-1.5">
+            Guaranteed days per week
+          </label>
+          <input
+            type="number"
+            name="min_shifts_per_week"
+            min={1}
+            max={21}
+            placeholder="No deal"
+            defaultValue={employee?.min_shifts_per_week ?? ''}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-gray-500 mb-1.5">
+            Max shifts per week
+          </label>
+          <input
+            type="number"
+            name="max_shifts_per_week"
+            min={1}
+            max={21}
+            placeholder="No limit"
+            defaultValue={employee?.max_shifts_per_week ?? ''}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
+          />
+        </div>
+        <p className="col-span-2 text-xs text-gray-400">
+          Both counted per period, so Week 1, Week 2 and Week 3 each get their own
+          allowance. Leave <strong>Guaranteed</strong> blank unless there&apos;s an
+          agreement — Auto-Schedule books those days first, then spreads what&apos;s left
+          evenly across everyone else. Leave <strong>Max</strong> blank for no limit; it
+          does not apply to managers, who work the hours they have.
         </p>
       </div>
 
@@ -441,6 +459,11 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
                     {emp.works_full_day && (
                       <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-semibold">
                         Full days
+                      </span>
+                    )}
+                    {emp.min_shifts_per_week != null && (
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 font-semibold">
+                        {emp.min_shifts_per_week} days guaranteed
                       </span>
                     )}
                     {emp.max_shifts_per_week != null && !emp.is_manager && (

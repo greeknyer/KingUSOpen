@@ -42,12 +42,30 @@ function readWeeklyAvailability(formData: FormData): WeeklyAvailability {
   return out
 }
 
-/** Blank means no cap. Out-of-range values are dropped rather than clamped. */
-function readMaxShifts(formData: FormData): number | null {
-  const raw = String(formData.get('max_shifts_per_week') ?? '').trim()
+/** Blank means unset. Out-of-range values are dropped rather than clamped. */
+function readShiftCount(formData: FormData, field: string): number | null {
+  const raw = String(formData.get(field) ?? '').trim()
   if (!raw) return null
   const n = parseInt(raw, 10)
   return Number.isInteger(n) && n >= 1 && n <= 21 ? n : null
+}
+
+function readMaxShifts(formData: FormData): number | null {
+  return readShiftCount(formData, 'max_shifts_per_week')
+}
+
+/**
+ * The agreed number of days, held at or below the cap.
+ *
+ * Postgres rejects a guarantee above the cap outright, which would surface as a
+ * save that just fails. Trimming it here means the form takes the entry and the
+ * two numbers stay consistent.
+ */
+function readMinShifts(formData: FormData): number | null {
+  const min = readShiftCount(formData, 'min_shifts_per_week')
+  if (min == null) return null
+  const max = readMaxShifts(formData)
+  return max != null && min > max ? max : min
 }
 
 function readLocations(formData: FormData): Location[] {
@@ -90,6 +108,7 @@ export async function addEmployee(formData: FormData): Promise<SaveResult> {
     locations: readLocations(formData),
     weekly_availability: readWeeklyAvailability(formData),
     max_shifts_per_week: readMaxShifts(formData),
+    min_shifts_per_week: readMinShifts(formData),
   })
   if (error) return toResult(error)
   revalidatePath('/dashboard/employees')
@@ -109,6 +128,7 @@ export async function updateEmployee(id: string, formData: FormData): Promise<Sa
     locations: readLocations(formData),
     weekly_availability: readWeeklyAvailability(formData),
     max_shifts_per_week: readMaxShifts(formData),
+    min_shifts_per_week: readMinShifts(formData),
   }).eq('id', id)
   if (error) return toResult(error)
   revalidatePath('/dashboard/employees')

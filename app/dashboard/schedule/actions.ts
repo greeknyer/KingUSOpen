@@ -127,6 +127,19 @@ export async function autoSchedulePeriod(
     periodShifts.set(id, (periodShifts.get(id) ?? 0) + 1)
   }
 
+  /**
+   * Days still owed against an agreed number, or 0 for anyone without one.
+   *
+   * Some staff return each year on a deal for a set number of days. Auto-Schedule
+   * settles those before it spreads what's left evenly, so a deal isn't quietly
+   * turned back into an even share.
+   */
+  function daysOwed(e: Employee): number {
+    const promised = e.min_shifts_per_week
+    if (promised == null) return 0
+    return Math.max(0, promised - (periodShifts.get(e.id) ?? 0))
+  }
+
   // Designated managers are fixed for the tournament and never enter the
   // general pool: the GM runs Food Village from outside the position grid, and
   // the Stadium manager is always at the Stadium.
@@ -223,6 +236,7 @@ export async function autoSchedulePeriod(
       canLocation: canWorkLocation,
       underCap,
       hoursSoFar: (e: Employee) => hoursTally.get(e.id) ?? 0,
+      daysOwed,
       stadiumManager:
         stadiumManager && isAvail(stadiumManager.id, date) ? stadiumManager : undefined,
     })

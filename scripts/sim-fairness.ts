@@ -60,6 +60,7 @@ function emp(
     locations: ['food_village', 'stadium'],
     weekly_availability: pattern,
     max_shifts_per_week: null,
+    min_shifts_per_week: null,
     works_full_day: false,
     active: true,
     created_at: '',
@@ -71,7 +72,7 @@ function emp(
 // couple of full-day preppers, one chef, one salads cover.
 const staff: Employee[] = [
   emp('Register A', ['register'], every(ALL)),
-  emp('Register B', ['register'], every(ALL)),
+  emp('Register B', ['register'], every(ALL), process.env.DEALS === '1' ? { min_shifts_per_week: 6 } : {}),
   emp('Register C', ['register'], every(ALL)),
   emp('Register D', ['register'], every(['am'])),
   emp('Register E', ['register'], every(['pm'])),
@@ -91,7 +92,7 @@ const staff: Employee[] = [
   emp('Salads B', process.env.CHEFMGR === '1' ? ['salads','prep','chef'] : ['salads','prep'], every(ALL), process.env.CHEFMGR === '1' ? { is_manager: true } : {}),
   emp('Stadium A', ['register'], every(ALL), { locations: ['stadium'] }),
   emp('Stadium B', ['register', 'prep'], every(ALL), { locations: ['stadium'] }),
-  emp('Stadium C', ['prep'], every(ALL), { locations: ['stadium'] }),
+  emp('Stadium C', ['prep'], every(ALL), process.env.DEALS === '1' ? { locations: ['stadium'], min_shifts_per_week: 6 } : { locations: ['stadium'] }),
 ]
 
 const SHORT = process.env.SHORT === '1'
@@ -181,6 +182,7 @@ export function runWeek() {
       canLocation: canWorkLocation,
       underCap: () => true,
       hoursSoFar: e => hoursTally.get(e.id) ?? 0,
+      daysOwed: e => e.min_shifts_per_week == null ? 0 : Math.max(0, e.min_shifts_per_week - (dayCount.get(e.id) ?? 0)),
     })
 
     for (const s2 of slots) {

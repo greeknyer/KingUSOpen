@@ -27,6 +27,7 @@ one is harmless.
 | `013_stadium_shift_times` | a set handover time for the Stadium |
 | `014_register_times` | one person per register, staggered opening times |
 | `015_register_period_shifts` | which shifts each register runs, per week |
+| `016_guaranteed_days` | agreed days per week for returning staff |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns

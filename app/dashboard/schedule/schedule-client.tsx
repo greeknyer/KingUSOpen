@@ -405,9 +405,17 @@ export default function ScheduleClient({
       // The single thing most responsible for the day count, in the order the
       // scheduler applies them — a cap it will not cross, then hours it is
       // balancing against, then slots it simply ran out of.
+      // An agreed number of days can't be met beyond the days they're free, so
+      // it's measured against those rather than flagged as short every period.
+      const promised = e.min_shifts_per_week
+      const owedTarget = promised == null ? null : Math.min(promised, freeDays)
+
       let reason = ''
       let tone: 'flat' | 'warn' | 'stop' = 'flat'
-      if (e.id === settings.general_manager_id) {
+      if (owedTarget != null && days < owedTarget) {
+        reason = `${owedTarget - days} short of their ${promised}-day agreement`
+        tone = 'stop'
+      } else if (e.id === settings.general_manager_id) {
         reason = 'GM — runs Food Village outside the grid'
       } else if (e.id === settings.stadium_manager_id) {
         reason = 'Stadium manager — fixed at the Stadium'
@@ -425,7 +433,7 @@ export default function ScheduleClient({
         tone = 'warn'
       }
 
-      return { e, days, hours, freeDays, cap, worksFull, reason, tone }
+      return { e, days, hours, freeDays, cap, worksFull, promised, reason, tone }
     })
     // Whoever got least is what you came to this table to look at.
     .sort((a, b) => a.days - b.days || b.freeDays - a.freeDays)
@@ -807,7 +815,7 @@ export default function ScheduleClient({
                 </tr>
               </thead>
               <tbody>
-                {summary.map(({ e, days, hours, freeDays, cap, worksFull, reason, tone }) => (
+                {summary.map(({ e, days, hours, freeDays, cap, worksFull, promised, reason, tone }) => (
                   <tr key={e.id} className="border-b border-gray-50 last:border-0">
                     <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap">
                       {e.name}
@@ -816,6 +824,11 @@ export default function ScheduleClient({
                       )}
                       {worksFull && (
                         <span className="ml-1.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">Full day</span>
+                      )}
+                      {promised != null && (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                          Deal {promised}
+                        </span>
                       )}
                       {cap != null && (
                         <span className="ml-1.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Max {cap}</span>

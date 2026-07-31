@@ -18,6 +18,8 @@ export interface Employee {
   locations: Location[]                        // where they can work
   weekly_availability: WeeklyAvailability      // which shifts, per day of week
   max_shifts_per_week: number | null           // cap per period; null = no cap
+  /** Days promised per period before anyone else shares the rest; null = none. */
+  min_shifts_per_week: number | null
   /** Works a position open to close instead of a shift; covers it alone. */
   works_full_day: boolean
   active: boolean
