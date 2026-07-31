@@ -151,6 +151,8 @@ export interface Availability {
   available: boolean
   /** Which shifts on this date. [] = off. null = whatever the pattern allows. */
   shifts: ShiftPeriod[] | null
+  /** Overrides the employee's works_full_day for this date. null = inherit. */
+  full_day: boolean | null
   notes: string | null
 }
 
@@ -266,6 +268,21 @@ export function patternShiftsOn(employee: Employee, date: string): ShiftPeriod[]
 /** Whether the standing pattern has them working at all on this date. */
 export function patternAvailableOn(employee: Employee, date: string): boolean {
   return patternShiftsOn(employee, date).length > 0
+}
+
+/**
+ * Whether someone works open to close on a date. Their standing arrangement
+ * unless the date's override says otherwise — a full-day prepper may only
+ * manage a shift on one day, and a shift worker may cover a full day when the
+ * stand is short-handed.
+ */
+export function worksFullDayOn(
+  employee: Employee,
+  date: string,
+  override?: Availability
+): boolean {
+  if (override && override.full_day != null) return override.full_day
+  return employee.works_full_day ?? false
 }
 
 /**

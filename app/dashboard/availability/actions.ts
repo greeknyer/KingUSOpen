@@ -30,14 +30,23 @@ function toResult(error: { message: string; code?: string } | null): SaveResult 
 export async function setAvailabilityShifts(
   employeeId: string,
   date: string,
-  shifts: string[]
+  shifts: string[],
+  fullDay: boolean
 ): Promise<SaveResult> {
   const supabase = await createClient()
   const valid = new Set(['am', 'mid', 'pm'])
   const clean = shifts.filter(s => valid.has(s))
 
   const { error } = await supabase.from('availability').upsert(
-    { employee_id: employeeId, date, shifts: clean, available: clean.length > 0 },
+    {
+      employee_id: employeeId,
+      date,
+      shifts: clean,
+      // Written explicitly rather than left NULL so the row records the
+      // decision made for this date instead of silently inheriting later.
+      full_day: clean.length > 0 ? fullDay : false,
+      available: clean.length > 0,
+    },
     { onConflict: 'employee_id,date' }
   )
   if (error) return toResult(error)

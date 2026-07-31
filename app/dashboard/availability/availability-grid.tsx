@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import {
   Employee, Availability, TournamentSettings, getTournamentDates,
-  patternShiftsOn, availableShiftsOn, SHIFT_PERIODS, ShiftPeriod,
+  patternShiftsOn, availableShiftsOn, worksFullDayOn, SHIFT_PERIODS, ShiftPeriod,
   weekdayIndex, DAY_LABELS,
 } from '@/lib/types'
 import {
@@ -27,17 +27,19 @@ function sameShifts(a: ShiftPeriod[], b: ShiftPeriod[]): boolean {
 
 /** Picker for one employee on one date. */
 function ShiftPicker({
-  employee, date, current, isOverride, onClose,
+  employee, date, current, currentFullDay, isOverride, onClose,
 }: {
   employee: Employee
   date: string
   current: ShiftPeriod[]
+  currentFullDay: boolean
   isOverride: boolean
   onClose: () => void
 }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<ShiftPeriod[]>(current)
+  const [fullDay, setFullDay] = useState(currentFullDay)
 
   const d = new Date(date + 'T00:00:00')
   const pattern = patternShiftsOn(employee, date)
@@ -50,10 +52,13 @@ function ShiftPicker({
     )
   }
 
-  function save(shifts: ShiftPeriod[]) {
+  function save(shifts: ShiftPeriod[], asFullDay: boolean) {
     setError(null)
     startTransition(async () => {
-      const r = await setAvailabilityShifts(employee.id, date, shifts)
+      // A full day covers every shift, so store all three — the scheduler's
+      // availability check then passes whichever slot it considers.
+      const toSave = asFullDay ? SHIFT_PERIODS.map(s => s.id) : shifts
+      const r = await setAvailabilityShifts(employee.id, date, toSave, asFullDay)
       if (r.ok) onClose()
       else setError(r.error)
     })
@@ -105,7 +110,18 @@ function ShiftPicker({
           {isOverride && <span className="text-amber-600"> · changed for this date</span>}
         </p>
 
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <button
+          onClick={() => setFullDay(v => !v)}
+          className={`w-full mb-3 px-4 py-3 min-h-[52px] rounded-lg text-sm font-bold border transition active:scale-95 ${
+            fullDay
+              ? 'bg-blue-100 text-blue-800 border-blue-300'
+              : 'bg-gray-100 text-gray-400 border-gray-200'
+          }`}
+        >
+          {fullDay ? '✓ Full day — open to close' : 'Full day — open to close'}
+        </button>
+
+        <div className={`grid grid-cols-3 gap-2 mb-3 ${fullDay ? 'opacity-40 pointer-events-none' : ''}`}>
           {SHIFT_PERIODS.map(s => (
             <button
               key={s.id}
@@ -123,14 +139,14 @@ function ShiftPicker({
 
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => save(selected)}
+            onClick={() => save(selected, fullDay)}
             disabled={pending}
             className="flex-1 bg-gray-900 text-white text-sm font-semibold rounded-lg py-3 min-h-[48px] hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition"
           >
             {pending ? 'Saving…' : 'Save for this date'}
           </button>
           <button
-            onClick={() => save([])}
+            onClick={() => save([], false)}
             disabled={pending}
             className="px-4 bg-red-50 text-red-600 text-sm font-semibold rounded-lg py-3 min-h-[48px] hover:bg-red-100 active:bg-red-200 disabled:opacity-50 transition"
           >
@@ -182,10 +198,15 @@ export default function AvailabilityGrid({
     return availableShiftsOn(emp, date, overrides.get(overrideKey(emp.id, date)))
   }
 
-  /** An override only counts as a change when it differs from the pattern. */
+  function fullDayFor(emp: Employee, date: string): boolean {
+    return worksFullDayOn(emp, date, overrides.get(overrideKey(emp.id, date)))
+  }
+
+  /** An override only counts as a change when it differs from their usual. */
   function isChanged(emp: Employee, date: string): boolean {
     const row = overrides.get(overrideKey(emp.id, date))
     if (!row) return false
+    if (row.full_day != null && row.full_day !== (emp.works_full_day ?? false)) return true
     return !sameShifts(shiftsFor(emp, date), patternShiftsOn(emp, date))
   }
 
@@ -232,6 +253,10 @@ export default function AvailabilityGrid({
           <span className="flex items-center gap-1.5">
             <span className="w-4 h-4 rounded bg-gray-100 border border-gray-200 inline-block"></span>
             Off
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-4 h-4 rounded bg-blue-100 border border-blue-200 inline-block"></span>
+            Full day
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-4 h-4 rounded bg-amber-100 border-2 border-amber-400 inline-block"></span>
@@ -289,6 +314,8 @@ export default function AvailabilityGrid({
                   const shifts = shiftsFor(emp, date)
                   const changed = isChanged(emp, date)
                   const off = shifts.length === 0
+                  // Full day only means anything on a day they're actually on.
+                  const full = !off && fullDayFor(emp, date)
                   return (
                     <td key={date} className="px-1 py-1 text-center">
                       <button
@@ -300,11 +327,13 @@ export default function AvailabilityGrid({
                               : 'bg-amber-100 text-amber-800 border-2 border-amber-400'
                             : off
                               ? 'bg-gray-100 text-gray-300 border border-gray-200 hover:bg-gray-200'
-                              : 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200'
+                              : full
+                                ? 'bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200'
+                                : 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200'
                         }`}
                         title={changed ? 'Changed for this date' : 'From their weekly pattern'}
                       >
-                        {cellLabel(shifts)}
+                        {full ? 'FULL' : cellLabel(shifts)}
                       </button>
                     </td>
                   )
@@ -324,6 +353,7 @@ export default function AvailabilityGrid({
           employee={editing.employee}
           date={editing.date}
           current={shiftsFor(editing.employee, editing.date)}
+          currentFullDay={fullDayFor(editing.employee, editing.date)}
           isOverride={isChanged(editing.employee, editing.date)}
           onClose={() => setEditing(null)}
         />

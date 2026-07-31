@@ -6,7 +6,7 @@ import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
   ShiftTemplate, shiftsForDay, canWork, canWorkLocation, Position,
-  Availability, availableShiftsOn, shiftPeriodFor,
+  Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor,
 } from '@/lib/types'
 
 export async function autoSchedulePeriod(
@@ -71,6 +71,11 @@ export async function autoSchedulePeriod(
    */
   function shiftsAvailable(e: Employee, date: string) {
     return availableShiftsOn(e, date, availMap.get(`${e.id}:${date}`))
+  }
+
+  /** Full days can be set per date, so read that rather than the employee flag. */
+  function isFullDay(e: Employee, date: string) {
+    return worksFullDayOn(e, date, availMap.get(`${e.id}:${date}`))
   }
 
   /** Working at all that date, whatever the shift. */
@@ -238,7 +243,7 @@ export async function autoSchedulePeriod(
     ]
 
     const fullDayStaff = availableEmps
-      .filter((e: Employee) => e.works_full_day && !assignedToday.has(e.id) && underCap(e))
+      .filter((e: Employee) => isFullDay(e, date) && !assignedToday.has(e.id) && underCap(e))
       .sort((a: Employee, b: Employee) =>
         (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
       )
