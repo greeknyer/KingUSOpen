@@ -134,44 +134,44 @@ export default function SetupClient({
   // are derived from each day's hours instead (1 on a short or open-ended day,
   // 2 on a long one), so there is nothing to configure.
   type EditableTemplate = { slot_order: number; start_time: string; end_time: string }
-  const initTemplates = (): EditableTemplate[] => {
-    const saved = shiftTemplates
-      .filter(t => t.location === 'food_village')
-      .sort((a, b) => a.slot_order - b.slot_order)
-    if (saved.length > 0) {
-      return saved.map(t => ({
-        slot_order: t.slot_order,
-        start_time: t.start_time?.slice(0, 5) ?? '',
-        end_time: t.end_time?.slice(0, 5) ?? '',
-      }))
-    }
-    return DEFAULT_SHIFT_TEMPLATES.food_village.map(t => ({
-      slot_order: t.slot_order,
-      start_time: t.start_time,
-      end_time: t.end_time ?? '',
-    }))
-  }
-  const [fvTemplates, setFvTemplates] = useState<EditableTemplate[]>(initTemplates)
 
-  // The kitchen keeps its own times — it opens before the stand does.
-  const initKitchen = (): EditableTemplate[] => {
-    const saved = shiftTemplates
-      .filter(t => t.location === 'food_village' && t.section === 'Kitchen')
-      .sort((a, b) => a.slot_order - b.slot_order)
-    if (saved.length > 0) {
-      return saved.map(t => ({
-        slot_order: t.slot_order,
-        start_time: t.start_time?.slice(0, 5) ?? '',
-        end_time: t.end_time?.slice(0, 5) ?? '',
-      }))
-    }
-    return DEFAULT_KITCHEN_TEMPLATES.map(t => ({
-      slot_order: t.slot_order,
-      start_time: t.start_time,
-      end_time: t.end_time ?? '',
-    }))
+  /**
+   * Build a section's rows from its defaults, overlaid with whatever is saved.
+   *
+   * Starting from the defaults rather than from the saved rows matters: the
+   * table always shows every shift the section runs, so a partially saved set
+   * can't hide one. A missing MID row previously made the mid shift look like
+   * it had been removed when it was only absent from the database.
+   *
+   * The section filter is exact. Reading every Food Village row regardless of
+   * section pulled the kitchen's AM and PM in as if they were the defaults.
+   */
+  const buildTemplates = (
+    section: string | null,
+    defaults: { slot_order: number; start_time: string; end_time: string | null }[]
+  ): EditableTemplate[] => {
+    const saved = new Map(
+      shiftTemplates
+        .filter(t => t.location === 'food_village' && (t.section ?? null) === section)
+        .map(t => [t.slot_order, t])
+    )
+    return defaults.map(d => {
+      const row = saved.get(d.slot_order)
+      return {
+        slot_order: d.slot_order,
+        start_time: row ? (row.start_time?.slice(0, 5) ?? '') : d.start_time,
+        end_time: row ? (row.end_time?.slice(0, 5) ?? '') : (d.end_time ?? ''),
+      }
+    })
   }
-  const [kitchenTemplates, setKitchenTemplates] = useState<EditableTemplate[]>(initKitchen)
+
+  const [fvTemplates, setFvTemplates] = useState<EditableTemplate[]>(() =>
+    buildTemplates(null, DEFAULT_SHIFT_TEMPLATES.food_village)
+  )
+  // The kitchen keeps its own times — it opens before the stand does.
+  const [kitchenTemplates, setKitchenTemplates] = useState<EditableTemplate[]>(() =>
+    buildTemplates('Kitchen', DEFAULT_KITCHEN_TEMPLATES)
+  )
 
   function updateTemplate(slotOrder: number, patch: Partial<EditableTemplate>) {
     setFvTemplates(prev =>
