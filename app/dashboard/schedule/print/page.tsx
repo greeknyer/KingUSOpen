@@ -3,7 +3,7 @@ import Link from 'next/link'
 import {
   getTournamentDates, formatTime, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS,
   LOCATION_LABELS, buildHoursMap, getHoursForDate, formatHoursRange,
-  Employee, ScheduleAssignment, OperatingHours, Location, PositionMeta,
+  Employee, ScheduleAssignment, OperatingHours, Location, PositionMeta, canWorkAnyPosition,
 } from '@/lib/types'
 
 const PERIOD_LABELS = ['Pre-tournament', 'Week 1', 'Week 2', 'Week 3']
@@ -54,10 +54,17 @@ export default async function PrintSchedulePage({
 
   // The GM runs Food Village from outside the position grid, so they're named
   // in the header rather than appearing as a row.
-  const { data: gmRows } = settings.general_manager_id
-    ? await supabase.from('employees').select('*').eq('id', settings.general_manager_id).limit(1)
+  const managerIds = [settings.general_manager_id, settings.stadium_manager_id].filter(Boolean)
+  const { data: managerRows } = managerIds.length
+    ? await supabase.from('employees').select('*').in('id', managerIds as string[])
     : { data: null }
-  const gm = (gmRows?.[0] ?? null) as Employee | null
+  const managers = (managerRows ?? []) as Employee[]
+  const gm = managers.find(m => m.id === settings.general_manager_id) ?? null
+  // A Stadium manager with no positions supervises rather than working one, so
+  // they never appear in the grid and have to be named alongside the GM.
+  const stadiumMgr = managers.find(m => m.id === settings.stadium_manager_id) ?? null
+  const stadiumMgrOffGrid =
+    stadiumMgr && !canWorkAnyPosition(stadiumMgr, 'stadium') ? stadiumMgr : null
 
   function forCell(location: Location, position: string, date: string) {
     return assignments
@@ -187,10 +194,15 @@ export default async function PrintSchedulePage({
           )}
         </div>
 
-        {gm && (
-          <p className="mb-4 text-[11px]">
-            <strong>General Manager:</strong> {gm.name} — Food Village, open to close, every open day.
-          </p>
+        {(gm || stadiumMgrOffGrid) && (
+          <div className="mb-4 text-[11px] space-y-0.5">
+            {gm && (
+              <p><strong>General Manager:</strong> {gm.name} — Food Village, open to close, every open day.</p>
+            )}
+            {stadiumMgrOffGrid && (
+              <p><strong>Stadium Manager:</strong> {stadiumMgrOffGrid.name} — Stadium, open to close, every open day.</p>
+            )}
+          </div>
         )}
 
         {locationTable('food_village', FOOD_VILLAGE_POSITIONS)}

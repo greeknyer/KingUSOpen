@@ -378,6 +378,18 @@ export function canWork(employee: Employee, position: Position): boolean {
 }
 
 /**
+ * Whether someone holds any skill a location's positions call for.
+ *
+ * A manager given no positions supervises rather than working one, so they run
+ * their location from outside the grid instead of occupying a slot somebody
+ * qualified is needed in.
+ */
+export function canWorkAnyPosition(employee: Employee, location: Location): boolean {
+  const positions = location === 'food_village' ? FOOD_VILLAGE_POSITIONS : STADIUM_POSITIONS
+  return positions.some(p => canWork(employee, p.id))
+}
+
+/**
  * The skills someone actually covers on a date. Their qualifications unless the
  * date narrows them — the salads cover on a Monday shouldn't be pulled onto
  * prep. Intersected with their skills so an override can only ever narrow.

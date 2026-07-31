@@ -222,11 +222,18 @@ export function fillDay(ctx: FillDayContext): DayResult {
 
   // The Stadium manager is fixed there for the tournament and floats between
   // Register and Prep, so they take a position before anyone else.
+  //
+  // Only a position they can actually work. This used to fall back to the first
+  // Stadium position when none matched, which put a manager given no positions
+  // at all onto a till — the one route by which anyone unqualified was ever
+  // scheduled, since every other path checks. A manager who works no position
+  // runs the Stadium from outside the grid, exactly as the GM does at Food
+  // Village, and the schedule names them above it instead.
   const sm = ctx.stadiumManager
   if (sm && ctx.canLocation(sm, 'stadium') && ctx.locationShifts('stadium').length > 0) {
     const target = ctx.fullDayCandidates.find(
       c => c.location === 'stadium' && ctx.canPosition(sm, c.position)
-    ) ?? ctx.fullDayCandidates.find(c => c.location === 'stadium')
+    )
     if (target) assignFullDay(sm, 'stadium', target.position)
   }
 

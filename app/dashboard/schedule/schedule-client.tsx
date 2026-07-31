@@ -8,7 +8,7 @@ import {
   ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel, positionRunsSlot,
   buildPeriodShiftMap, positionRunsSlotInPeriod, positionOpenInPeriod,
   Availability, availableShiftsOn, worksFullDayOn, shiftLengthHours, canWorkLocation,
-  skillLabel, LOCATION_LABELS,
+  skillLabel, LOCATION_LABELS, canWorkAnyPosition,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, unpublishPeriod, clearDraftPeriod } from './actions'
 
@@ -261,6 +261,12 @@ export default function ScheduleClient({
 
   const generalManager = employees.find(e => e.id === settings.general_manager_id)
 
+  // A Stadium manager given no positions supervises rather than working one, so
+  // they sit outside the grid like the GM rather than taking up a slot.
+  const stadiumManager = employees.find(e => e.id === settings.stadium_manager_id)
+  const stadiumManagerOffGrid =
+    stadiumManager && !canWorkAnyPosition(stadiumManager, 'stadium') ? stadiumManager : undefined
+
   /** The shifts actually running for a location on a date. */
   function dayShifts(location: Location, date: string) {
     return shiftsForDay(location, hoursFor(location, date), yearTemplates)
@@ -418,7 +424,12 @@ export default function ScheduleClient({
       } else if (e.id === settings.general_manager_id) {
         reason = 'GM — runs Food Village outside the grid'
       } else if (e.id === settings.stadium_manager_id) {
-        reason = 'Stadium manager — fixed at the Stadium'
+        reason = canWorkAnyPosition(e, 'stadium')
+          ? 'Stadium manager — fixed at the Stadium'
+          : 'Stadium manager — supervises, no positions set'
+      } else if ((e.skills ?? []).length === 0) {
+        reason = 'No positions set — nothing they can be scheduled for'
+        tone = 'stop'
       } else if (freeDays === 0) {
         reason = 'Not available any day this period'
         tone = 'stop'
@@ -569,6 +580,19 @@ export default function ScheduleClient({
           <span className="text-sm font-semibold text-purple-900">{generalManager.name}</span>
           <span className="text-xs text-purple-600">
             On site at Food Village open to close, every open day — not counted toward position coverage.
+          </span>
+        </div>
+      )}
+
+      {/* A Stadium manager holding no position runs the stand rather than
+          working one, so they're named here rather than occupying a slot. */}
+      {stadiumManagerOffGrid && (
+        <div className="mb-4 px-4 py-3 rounded-xl bg-purple-50 border border-purple-100 flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-bold uppercase px-2 py-1 rounded bg-purple-200 text-purple-800">Stadium Mgr</span>
+          <span className="text-sm font-semibold text-purple-900">{stadiumManagerOffGrid.name}</span>
+          <span className="text-xs text-purple-600">
+            On site at the Stadium open to close, every open day. No positions set, so they
+            supervise rather than covering one — add a position on Employees to put them in the grid.
           </span>
         </div>
       )}
