@@ -10,7 +10,7 @@ import {
   Availability, availableShiftsOn, worksFullDayOn, shiftLengthHours, canWorkLocation,
   skillLabel, LOCATION_LABELS,
 } from '@/lib/types'
-import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
+import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, unpublishPeriod, clearDraftPeriod } from './actions'
 
 const PERIOD_LABELS = ['Pre-tournament', 'Week 1', 'Week 2', 'Week 3']
 
@@ -327,6 +327,7 @@ export default function ScheduleClient({
   }
 
   const hasDraft = initialAssignments.some(a => currentDates.includes(a.date) && a.status === 'draft')
+  const hasPublished = initialAssignments.some(a => currentDates.includes(a.date) && a.status === 'published')
 
   /**
    * Slots in this period with nobody in them. Counts only rows that genuinely
@@ -463,6 +464,18 @@ export default function ScheduleClient({
     })
   }
 
+  function handleUnpublish() {
+    setMessage('')
+    startTransition(async () => {
+      const r = await unpublishPeriod(currentDates)
+      setMessage(
+        r.ok
+          ? 'Back to draft — nothing was lost. Publish again when you’re ready.'
+          : `Nothing was unpublished — ${r.error}`
+      )
+    })
+  }
+
   function handleClearDraft() {
     if (!confirm('Clear all draft entries for this period?')) return
     startTransition(async () => {
@@ -519,6 +532,14 @@ export default function ScheduleClient({
                 Clear Draft
               </button>
             </>
+          )}
+          {/* Undo for a Publish pressed by mistake. Nothing is deleted — the
+              rows go back to draft, so publishing again restores them. */}
+          {hasPublished && (
+            <button onClick={handleUnpublish} disabled={pending}
+              className="px-4 py-2.5 min-h-[44px] border border-amber-300 bg-amber-50 text-amber-800 text-sm font-semibold rounded-lg hover:bg-amber-100 active:bg-amber-200 disabled:opacity-50 transition">
+              Unpublish
+            </button>
           )}
         </div>
       </div>

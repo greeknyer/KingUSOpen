@@ -86,7 +86,7 @@ const staff: Employee[] = [
   emp('Prep F', ['prep', 'register'], every(ALL)),
   // The chef is in for the morning only, and not every day — his hours come
   // from his pattern, not from being the only person who can cook.
-  emp('Alberto', ['chef'], { '0': ['am'], '1': ['am'], '2': [], '3': ['am'], '4': ['am'], '5': [], '6': ['am'] }),
+  emp('Alberto', ['chef'], { '0': ['am'], '1': ['am'], '2': ['am'], '3': ['am'], '4': ['am'], '5': [], '6': ['am'] }),
   emp('Salads A', ['salads'], every(ALL)),
   emp('Salads B', ['salads', 'prep'], every(ALL)),
   emp('Stadium A', ['register'], every(ALL), { locations: ['stadium'] }),

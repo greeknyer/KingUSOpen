@@ -337,6 +337,26 @@ export async function publishPeriod(dates: string[]): Promise<SaveResult> {
   return { ok: true }
 }
 
+/**
+ * Put a published period back to draft.
+ *
+ * The counterpart to publishPeriod, for a Publish pressed by mistake. Nothing
+ * is deleted — the rows return to draft exactly as they were, so publishing
+ * again restores the same schedule.
+ */
+export async function unpublishPeriod(dates: string[]): Promise<SaveResult> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('schedule_assignments')
+    .update({ status: 'draft' })
+    .in('date', dates)
+    .eq('status', 'published')
+  if (error) return toResult(error)
+  revalidatePath('/dashboard/schedule')
+  revalidatePath('/dashboard/timetracking')
+  return { ok: true }
+}
+
 export async function clearDraftPeriod(dates: string[]): Promise<SaveResult> {
   const supabase = await createClient()
   const { error } = await supabase
