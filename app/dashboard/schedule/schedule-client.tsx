@@ -2,8 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import {
-  Employee, ScheduleAssignment, TournamentSettings, StadiumOpenDay, Register4Config,
-  FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position
+  Employee, ScheduleAssignment, TournamentSettings, OperatingHours, Register4Config,
+  FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position,
+  Location, buildHoursMap, getHoursForDate, formatHoursRange,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
 
@@ -189,13 +190,13 @@ export default function ScheduleClient({
   employees,
   assignments: initialAssignments,
   settings,
-  stadiumOpenDays,
+  operatingHours,
   register4Configs,
 }: {
   employees: Employee[]
   assignments: ScheduleAssignment[]
   settings: TournamentSettings
-  stadiumOpenDays: StadiumOpenDay[]
+  operatingHours: OperatingHours[]
   register4Configs: Register4Config[]
 }) {
   const [activePeriod, setActivePeriod] = useState(1) // Default to week 1
@@ -210,17 +211,18 @@ export default function ScheduleClient({
   const currentDates = periodDates[activePeriod]
   const year = settings.year
 
-  // Build open days set for current period
-  const stadiumOpenSet = new Set<string>()
-  stadiumOpenDays.forEach(d => {
-    if (d.year === year && d.is_open) {
-      // Determine the actual date for this day_index in this period
-      const dates = periodDates[d.period]
-      if (dates && d.day_index < dates.length) {
-        stadiumOpenSet.add(dates[d.day_index])
-      }
-    }
-  })
+  // Hours drive both the CLOSED markers and the per-day headers below.
+  const hoursMap = buildHoursMap(operatingHours.filter(h => h.year === year))
+
+  function hoursFor(location: Location, date: string) {
+    return getHoursForDate(hoursMap, location, date, settings)
+  }
+
+  function isLocationOpen(location: Location, date: string): boolean {
+    const h = hoursFor(location, date)
+    // No row saved yet: Food Village is assumed open, Stadium assumed dark.
+    return h ? h.is_open : location === 'food_village'
+  }
 
   const reg4ActiveSet = new Set<string>()
   register4Configs.forEach(r => {
@@ -240,12 +242,17 @@ export default function ScheduleClient({
 
   function handleAutoSchedule() {
     setMessage('')
-    const stadiumOpenDates = [...stadiumOpenSet].filter(d => currentDates.includes(d))
+    // Open days and shift times now come from the hours saved in Tournament
+    // Setup, which autoSchedulePeriod reads directly.
     const reg4Dates = [...reg4ActiveSet].filter(d => currentDates.includes(d))
     startTransition(async () => {
       try {
-        const { count } = await autoSchedulePeriod(currentDates, year, stadiumOpenDates, reg4Dates)
-        setMessage(`Generated ${count} assignments as draft.`)
+        const { count, unfilled } = await autoSchedulePeriod(currentDates, year, reg4Dates)
+        setMessage(
+          unfilled > 0
+            ? `Generated ${count} assignments as draft. ${unfilled} slot${unfilled === 1 ? '' : 's'} left empty — not enough available staff to cover every shift.`
+            : `Generated ${count} assignments as draft.`
+        )
       } catch (e) {
         setMessage(`Error: ${e instanceof Error ? e.message : 'Unknown'}`)
       }
@@ -325,7 +332,7 @@ export default function ScheduleClient({
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
         <div className="px-5 py-3 border-b border-gray-100 bg-amber-50">
           <span className="text-sm font-bold text-amber-900">Food Village</span>
-          <span className="text-xs text-amber-600 ml-2">Opens 10am</span>
+          <span className="text-xs text-amber-600 ml-2">Hours set per day in Tournament Setup</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
@@ -335,9 +342,13 @@ export default function ScheduleClient({
                 <th className="text-left text-xs font-semibold text-gray-400 px-2 py-2 w-14">Slot</th>
                 {currentDates.map(date => {
                   const { weekday, date: d, month } = formatDateHeader(date)
+                  const isOpen = isLocationOpen('food_village', date)
                   return (
-                    <th key={date} className="text-center text-xs px-1 py-2 font-semibold text-gray-500 min-w-[110px]">
+                    <th key={date} className={`text-center text-xs px-1 py-2 font-semibold min-w-[110px] ${isOpen ? 'text-gray-500' : 'text-gray-300'}`}>
                       {weekday} {month} {d}
+                      <div className="text-[11px] font-normal text-amber-600">
+                        {formatHoursRange(hoursFor('food_village', date))}
+                      </div>
                     </th>
                   )
                 })}
@@ -398,7 +409,7 @@ export default function ScheduleClient({
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 bg-blue-50">
           <span className="text-sm font-bold text-blue-900">Stadium</span>
-          <span className="text-xs text-blue-600 ml-2">Opens 10:30am</span>
+          <span className="text-xs text-blue-600 ml-2">Hours set per day in Tournament Setup</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
@@ -408,11 +419,13 @@ export default function ScheduleClient({
                 <th className="text-left text-xs font-semibold text-gray-400 px-2 py-2 w-14">Slot</th>
                 {currentDates.map(date => {
                   const { weekday, date: d, month } = formatDateHeader(date)
-                  const isOpen = stadiumOpenSet.has(date)
+                  const isOpen = isLocationOpen('stadium', date)
                   return (
                     <th key={date} className={`text-center text-xs px-1 py-2 font-semibold min-w-[110px] ${isOpen ? 'text-gray-500' : 'text-gray-300'}`}>
                       {weekday} {month} {d}
-                      {!isOpen && <div className="text-[11px] text-gray-300 font-normal">CLOSED</div>}
+                      <div className={`text-[11px] font-normal ${isOpen ? 'text-blue-600' : 'text-gray-300'}`}>
+                        {formatHoursRange(hoursFor('stadium', date))}
+                      </div>
                     </th>
                   )
                 })}
@@ -433,7 +446,7 @@ export default function ScheduleClient({
                         <span className="text-[10px] text-gray-400 font-medium">#{slotOrder}</span>
                       </td>
                       {currentDates.map(date => {
-                        if (!stadiumOpenSet.has(date)) {
+                        if (!isLocationOpen('stadium', date)) {
                           return isFirstSlot ? (
                             <td key={date} rowSpan={2} className="px-1 py-1 align-middle">
                               <div className="min-h-[92px] rounded-lg bg-gray-50 border border-dashed border-gray-100 flex items-center justify-center">

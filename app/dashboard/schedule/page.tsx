@@ -9,12 +9,12 @@ export default async function SchedulePage() {
   const [
     { data: employees },
     { data: settingsRows },
-    { data: stadiumDays },
+    { data: operatingHours },
     { data: reg4Config },
   ] = await Promise.all([
     supabase.from('employees').select('*').eq('active', true).order('name'),
     supabase.from('tournament_settings').select('*').order('year', { ascending: false }).limit(1),
-    supabase.from('stadium_open_days').select('*'),
+    supabase.from('operating_hours').select('*'),
     supabase.from('register4_config').select('*'),
   ])
 
@@ -50,7 +50,7 @@ export default async function SchedulePage() {
         employees={employees ?? []}
         assignments={assignments ?? []}
         settings={settings}
-        stadiumOpenDays={stadiumDays ?? []}
+        operatingHours={operatingHours ?? []}
         register4Configs={reg4Config ?? []}
       />
     </div>

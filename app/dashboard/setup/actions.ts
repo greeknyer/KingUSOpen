@@ -17,22 +17,38 @@ export async function saveTournamentSettings(formData: FormData) {
   revalidatePath('/dashboard')
 }
 
-export async function saveStadiumOpenDays(
+export async function saveOperatingHours(
   year: number,
-  openDays: { period: number; day_index: number; is_open: boolean }[]
+  rows: {
+    location: string
+    period: number
+    day_index: number
+    is_open: boolean
+    open_time: string | null
+    close_time: string | null
+  }[]
 ) {
   const supabase = await createClient()
 
-  // Delete existing config for this year
-  await supabase.from('stadium_open_days').delete().eq('year', year)
+  // Replace the whole year's grid in one go — the Setup screen always submits
+  // every day it rendered, so a delete-then-insert keeps the table in step with
+  // the form even when pre_tournament_days shrinks.
+  await supabase.from('operating_hours').delete().eq('year', year)
 
-  // Insert new config
-  if (openDays.length > 0) {
-    await supabase.from('stadium_open_days').insert(
-      openDays.map(d => ({ year, ...d }))
+  if (rows.length > 0) {
+    await supabase.from('operating_hours').insert(
+      rows.map(r => ({
+        year,
+        ...r,
+        // A blank time from a form arrives as '' — store it as NULL so
+        // close_time NULL keeps meaning "open-ended".
+        open_time: r.open_time || null,
+        close_time: r.close_time || null,
+      }))
     )
   }
   revalidatePath('/dashboard/setup')
+  revalidatePath('/dashboard/schedule')
 }
 
 export async function saveRegister4Config(

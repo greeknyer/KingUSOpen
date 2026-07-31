@@ -10,14 +10,22 @@ CREATE TABLE IF NOT EXISTS tournament_settings (
   created_at timestamptz DEFAULT now()
 );
 
--- Stadium open days per period
-CREATE TABLE IF NOT EXISTS stadium_open_days (
+-- Hours of operation, per location per day.
+-- Per-day rather than per-period because the Stadium keeps different hours on
+-- the first couple of days of a period. is_open false = closed that day
+-- (the Stadium is dark on many days; Food Village is normally open).
+-- close_time NULL = open-ended, displayed as "Close".
+CREATE TABLE IF NOT EXISTS operating_hours (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   year int NOT NULL,
+  location text NOT NULL CHECK (location IN ('food_village', 'stadium')),
   period int NOT NULL CHECK (period IN (0, 1, 2, 3)),  -- 0=pre, 1=w1, 2=w2, 3=w3
   day_index int NOT NULL,  -- index within the period (0..pre_days-1 or 0..6)
-  is_open boolean NOT NULL DEFAULT false,
-  UNIQUE (year, period, day_index)
+  is_open boolean NOT NULL DEFAULT true,
+  open_time time,
+  close_time time,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (year, location, period, day_index)
 );
 
 -- Register 4 active state per period

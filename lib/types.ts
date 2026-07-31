@@ -17,12 +17,22 @@ export interface TournamentSettings {
   pre_tournament_days: number // Days before week 1 (default 3)
 }
 
-export interface StadiumOpenDay {
+export interface OperatingHours {
   id: string
   year: number
-  period: number     // 0=pre-tournament, 1=week1, 2=week2, 3=week3
-  day_index: number  // 0-6, index within that period
+  location: Location
+  period: number       // 0=pre-tournament, 1=week1, 2=week2, 3=week3
+  day_index: number    // 0-6, index within that period
   is_open: boolean
+  open_time: string | null    // HH:MM
+  close_time: string | null   // HH:MM, or null = open-ended ("Close")
+}
+
+// Used to seed the Setup grid. These are the times that were previously
+// hardcoded in the auto-scheduler — set the real ones in Tournament Setup.
+export const DEFAULT_HOURS: Record<Location, { open: string; close: string }> = {
+  food_village: { open: '10:00', close: '16:00' },
+  stadium: { open: '10:30', close: '16:00' },
 }
 
 export interface Register4Config {
@@ -155,4 +165,104 @@ export function formatTime(t: string | null): string {
   const ampm = h >= 12 ? 'pm' : 'am'
   const hour = h % 12 || 12
   return m === 0 ? `${hour}${ampm}` : `${hour}:${m.toString().padStart(2, '0')}${ampm}`
+}
+
+// ─────────────────────────────────────────────
+// Hours of operation
+// ─────────────────────────────────────────────
+
+function toMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+function fromMinutes(min: number): string {
+  const m = ((min % 1440) + 1440) % 1440
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+}
+
+/** Length of a shift in hours, tolerating a close time past midnight. */
+export function shiftLengthHours(start: string | null, end: string | null): number {
+  if (!start) return 0
+  if (!end) return 6 // open-ended shift — assume 6h for fair-distribution purposes
+  const s = toMinutes(start)
+  let e = toMinutes(end)
+  if (e <= s) e += 1440
+  return (e - s) / 60
+}
+
+/** A day shorter than this stays a single shift instead of splitting. */
+export const HANDOFF_MIN_HOURS = 8
+
+/**
+ * Split a day's opening hours into the handoff slots the schedule grid expects.
+ *
+ * Returns one shift rather than two when the day is short or open-ended — an
+ * evening-only day like "Stadium 8/21, 6pm to close" is one shift, not a 6pm
+ * handoff to a shift that starts at midnight.
+ */
+export function planShifts(
+  open: string | null,
+  close: string | null
+): { start: string; end: string | null }[] {
+  if (!open) return []
+  if (!close) return [{ start: open, end: null }]
+
+  const openMin = toMinutes(open)
+  let closeMin = toMinutes(close)
+  if (closeMin <= openMin) closeMin += 1440 // closes after midnight
+
+  const duration = closeMin - openMin
+  if (duration < HANDOFF_MIN_HOURS * 60) return [{ start: open, end: close }]
+
+  // Split down the middle, rounded to the nearest quarter hour.
+  const mid = openMin + Math.round(duration / 2 / 15) * 15
+  return [
+    { start: open, end: fromMinutes(mid) },
+    { start: fromMinutes(mid), end: close },
+  ]
+}
+
+/** Where a date sits in the tournament, or null if it falls outside it. */
+export function getPeriodAndDayIndex(
+  date: string,
+  settings: TournamentSettings
+): { period: number; day_index: number } | null {
+  const { preTournament, week1, week2, week3 } = getTournamentDates(settings)
+  const periods = [preTournament, week1, week2, week3]
+  for (let period = 0; period < periods.length; period++) {
+    const day_index = periods[period].indexOf(date)
+    if (day_index !== -1) return { period, day_index }
+  }
+  return null
+}
+
+/** Key for looking hours up by location and day. */
+export function hoursKey(location: Location, period: number, dayIndex: number): string {
+  return `${location}:${period}:${dayIndex}`
+}
+
+export function buildHoursMap(rows: OperatingHours[]): Map<string, OperatingHours> {
+  const map = new Map<string, OperatingHours>()
+  rows.forEach(r => map.set(hoursKey(r.location, r.period, r.day_index), r))
+  return map
+}
+
+/** Hours for a given location on a given date, or null if the date is outside the tournament. */
+export function getHoursForDate(
+  map: Map<string, OperatingHours>,
+  location: Location,
+  date: string,
+  settings: TournamentSettings
+): OperatingHours | null {
+  const pos = getPeriodAndDayIndex(date, settings)
+  if (!pos) return null
+  return map.get(hoursKey(location, pos.period, pos.day_index)) ?? null
+}
+
+/** "10am → 10pm", "6pm → Close", or "Closed". */
+export function formatHoursRange(h: OperatingHours | null): string {
+  if (!h || !h.is_open) return 'Closed'
+  if (!h.open_time) return '—'
+  return `${formatTime(h.open_time)} → ${formatTime(h.close_time)}`
 }

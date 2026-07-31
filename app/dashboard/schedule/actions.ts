@@ -2,12 +2,14 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS } from '@/lib/types'
+import {
+  Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
+  OperatingHours, Location, buildHoursMap, getHoursForDate, planShifts, shiftLengthHours,
+} from '@/lib/types'
 
 export async function autoSchedulePeriod(
   dates: string[],
   year: number,
-  stadiumOpenDates: string[],
   register4ActiveDates: string[]
 ) {
   const supabase = await createClient()
@@ -19,13 +21,30 @@ export async function autoSchedulePeriod(
     .in('date', dates)
     .eq('status', 'draft')
 
-  // Load employees and availability
-  const [{ data: employees }, { data: avails }] = await Promise.all([
-    supabase.from('employees').select('*').eq('active', true),
-    supabase.from('availability').select('*').in('date', dates),
-  ])
+  // Load employees, availability, and the hours that define each day's shifts.
+  const [{ data: employees }, { data: avails }, { data: settingsRows }, { data: hoursRows }] =
+    await Promise.all([
+      supabase.from('employees').select('*').eq('active', true),
+      supabase.from('availability').select('*').in('date', dates),
+      supabase.from('tournament_settings').select('*').eq('year', year).limit(1),
+      supabase.from('operating_hours').select('*').eq('year', year),
+    ])
 
-  if (!employees || employees.length === 0) return { count: 0 }
+  if (!employees || employees.length === 0) return { count: 0, unfilled: 0 }
+
+  const settings: TournamentSettings | undefined = settingsRows?.[0]
+  if (!settings) return { count: 0, unfilled: 0 }
+
+  const hoursMap = buildHoursMap((hoursRows ?? []) as OperatingHours[])
+
+  /** The shifts to staff for a location on a date, from its configured hours. */
+  function shiftsFor(location: Location, date: string) {
+    const h = getHoursForDate(hoursMap, location, date, settings!)
+    // No row saved: Food Village falls back to a default day, Stadium stays dark.
+    if (!h) return location === 'food_village' ? planShifts('10:00', '16:00') : []
+    if (!h.is_open) return []
+    return planShifts(h.open_time, h.close_time)
+  }
 
   // Build availability map: default = available
   const availMap = new Map<string, boolean>()
@@ -36,76 +55,102 @@ export async function autoSchedulePeriod(
     return availMap.has(key) ? availMap.get(key)! : true
   }
 
-  // Track hours assigned per employee (for fair distribution)
-  const hoursMap = new Map<string, number>(employees.map((e: Employee) => [e.id, 0]))
+  // Track hours assigned per employee (for fair distribution). Named apart from
+  // the operating-hours map above, which is a different thing entirely.
+  const hoursTally = new Map<string, number>(employees.map((e: Employee) => [e.id, 0]))
 
   const assignments: object[] = []
+  let unfilled = 0
 
   for (const date of dates) {
     const availableEmps = employees.filter((e: Employee) => isAvail(e.id, date))
     const managers = availableEmps.filter((e: Employee) => e.role === 'manager')
     const crew = availableEmps.filter((e: Employee) => e.role === 'crew')
 
-    // Sort by hours assigned (fewest first) for fair distribution
-    const sortByHours = (a: Employee, b: Employee) =>
-      (hoursMap.get(a.id) ?? 0) - (hoursMap.get(b.id) ?? 0)
-
-    managers.sort(sortByHours)
-    crew.sort(sortByHours)
-
-    const assignedToday = new Set<string>()
-
-    // Assign to Food Village positions
-    const positions = FOOD_VILLAGE_POSITIONS.filter(p => {
+    const fvPositions = FOOD_VILLAGE_POSITIONS.filter(p => {
       if (p.id === 'register_4') return register4ActiveDates.includes(date)
       return true
     })
 
-    for (const pos of positions) {
-      // Assign slot 1 (early shift)
-      const pool = pos.id === 'chef' ? [...managers, ...crew] : [...crew, ...managers]
-      const emp1 = pool.find(e => !assignedToday.has(e.id))
-      if (emp1) {
-        assignments.push({
-          year,
-          date,
-          location: 'food_village',
-          position: pos.id,
-          slot_order: 1,
-          employee_id: emp1.id,
-          planned_start: '10:00',
-          planned_end: '16:00',
-          status: 'draft',
-        })
-        assignedToday.add(emp1.id)
-        hoursMap.set(emp1.id, (hoursMap.get(emp1.id) ?? 0) + 6)
+    const fvShifts = shiftsFor('food_village', date)
+    const stadiumShifts = shiftsFor('stadium', date)
+
+    // Build the day's slots ordered by shift first, then location, then
+    // position. Ordering by shift matters when staff is tight: it covers every
+    // position's opening shift before staffing anyone's handoff, rather than
+    // fully staffing a few positions and leaving others dark all day.
+    type Slot = {
+      location: Location
+      position: string
+      isChef: boolean
+      slotOrder: number
+      start: string
+      end: string | null
+    }
+    const slots: Slot[] = []
+    const maxShifts = Math.max(fvShifts.length, stadiumShifts.length)
+
+    for (let s = 0; s < maxShifts; s++) {
+      if (fvShifts[s]) {
+        for (const pos of fvPositions) {
+          slots.push({
+            location: 'food_village',
+            position: pos.id,
+            isChef: pos.id === 'chef',
+            slotOrder: s + 1,
+            start: fvShifts[s].start,
+            end: fvShifts[s].end,
+          })
+        }
+      }
+      if (stadiumShifts[s]) {
+        for (const pos of STADIUM_POSITIONS) {
+          slots.push({
+            location: 'stadium',
+            position: pos.id,
+            isChef: false,
+            slotOrder: s + 1,
+            start: stadiumShifts[s].start,
+            end: stadiumShifts[s].end,
+          })
+        }
       }
     }
 
-    // Assign to Stadium if open that day
-    if (stadiumOpenDates.includes(date)) {
-      const stadiumEmps = employees
-        .filter((e: Employee) => isAvail(e.id, date) && !assignedToday.has(e.id))
-        .sort(sortByHours)
+    // One shift per employee per day — a handoff needs a second person.
+    const assignedToday = new Set<string>()
 
-      for (const pos of STADIUM_POSITIONS) {
-        const emp = stadiumEmps.shift()
-        if (emp) {
-          assignments.push({
-            year,
-            date,
-            location: 'stadium',
-            position: pos.id,
-            slot_order: 1,
-            employee_id: emp.id,
-            planned_start: '10:30',
-            planned_end: '16:00',
-            status: 'draft',
-          })
-          assignedToday.add(emp.id)
-          hoursMap.set(emp.id, (hoursMap.get(emp.id) ?? 0) + 5.5)
-        }
+    for (const slot of slots) {
+      // Re-sort each time so the employee with the fewest hours so far goes
+      // next. Chef prefers a manager; everything else prefers crew.
+      const sortByHours = (a: Employee, b: Employee) =>
+        (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
+      const pool = slot.isChef
+        ? [...managers.sort(sortByHours), ...crew.sort(sortByHours)]
+        : [...crew.sort(sortByHours), ...managers.sort(sortByHours)]
+
+      const emp = pool.find(e => !assignedToday.has(e.id))
+      if (!emp) {
+        unfilled++
+        continue
       }
+
+      assignments.push({
+        year,
+        date,
+        location: slot.location,
+        position: slot.position,
+        slot_order: slot.slotOrder,
+        employee_id: emp.id,
+        planned_start: slot.start,
+        planned_end: slot.end,
+        status: 'draft',
+      })
+      assignedToday.add(emp.id)
+      hoursTally.set(
+        emp.id,
+        (hoursTally.get(emp.id) ?? 0) + shiftLengthHours(slot.start, slot.end)
+      )
     }
   }
 
@@ -114,7 +159,7 @@ export async function autoSchedulePeriod(
   }
 
   revalidatePath('/dashboard/schedule')
-  return { count: assignments.length }
+  return { count: assignments.length, unfilled }
 }
 
 export async function saveAssignment(assignment: {
