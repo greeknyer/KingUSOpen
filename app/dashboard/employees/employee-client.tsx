@@ -290,7 +290,8 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         />
         <p className="text-xs text-gray-400 mt-1">
           Leave blank for no limit. Counted per period, so Week 1, Week 2 and Week 3 each
-          get their own allowance.
+          get their own allowance. Does not apply to managers — they work the hours they
+          have.
         </p>
       </div>
 
@@ -442,7 +443,7 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
                         Full days
                       </span>
                     )}
-                    {emp.max_shifts_per_week != null && (
+                    {emp.max_shifts_per_week != null && !emp.is_manager && (
                       <span className="text-[11px] px-2 py-0.5 rounded bg-gray-50 text-gray-500 border border-gray-100">
                         Max {emp.max_shifts_per_week}/wk
                       </span>

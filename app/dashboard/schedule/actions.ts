@@ -9,6 +9,7 @@ import {
   Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor, positionRunsSlot,
   ShiftPeriod,
 } from '@/lib/types'
+import { SHIFT_PRIORITY, pickBest, meanLength } from '@/lib/scheduling'
 
 export async function autoSchedulePeriod(
   dates: string[],
@@ -110,6 +111,10 @@ export async function autoSchedulePeriod(
   const periodShifts = new Map<string, number>()
 
   function underCap(e: Employee): boolean {
+    // Managers aren't capped — they work the hours they have, and the weekly
+    // limit exists to hold regular staff to agreed hours, not to bench a
+    // manager mid-tournament.
+    if (e.is_manager) return true
     const cap = e.max_shifts_per_week
     if (cap == null) return true
     return (periodShifts.get(e.id) ?? 0) < cap
@@ -153,13 +158,9 @@ export async function autoSchedulePeriod(
     }
     const slots: Slot[] = []
 
-    // Operational priority, not clock order or shift length. A stand has to
-    // open and it has to close, so AM and PM are the shifts that must be
-    // covered; MID is the overlap that helps at peak and is the right thing to
-    // lose when staff runs short. Building the list in this order means pass 1
-    // drops mids rather than leaving a position with nobody to open it.
-    const SHIFT_PRIORITY: ShiftPeriod[] = ['am', 'pm', 'mid']
-
+    // Built in operational priority — see SHIFT_PRIORITY. Slots are filled in
+    // this same order, so a short day loses mids rather than leaving a position
+    // with nobody to open it.
     for (const period of SHIFT_PRIORITY) {
       const fv = fvShifts.find(s => shiftPeriodFor('food_village', s.slot_order) === period)
       if (fv) {
@@ -303,14 +304,19 @@ export async function autoSchedulePeriod(
       return dayShifts.filter(s => avail.includes(shiftPeriodFor(location, s.slot_order))).length
     }
 
-    /** Most constrained first, then whoever has worked least. */
-    function pickOrder(location: Location) {
-      return (a: Employee, b: Employee) => {
-        const oa = shiftOptions(a, location)
-        const ob = shiftOptions(b, location)
-        if (oa !== ob) return oa - ob
-        return (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
-      }
+    /** Mean shift length that day, so the picker can tell long from short. */
+    function meanFor(location: Location) {
+      const dayShifts = location === 'food_village' ? fvShifts : stadiumShifts
+      return meanLength(dayShifts.map(s => shiftLengthHours(s.start, s.end)))
+    }
+
+    function pickOrder(location: Location, slotLength: number) {
+      return pickBest({
+        shiftOptions: (e: Employee) => shiftOptions(e, location),
+        hours: (e: Employee) => hoursTally.get(e.id) ?? 0,
+        slotLength,
+        meanShiftLength: meanFor(location),
+      })
     }
 
     // Coverage decides WHICH slots get staffed; fairness decides WHO fills
@@ -328,7 +334,7 @@ export async function autoSchedulePeriod(
     const staffable: typeof openSlots = []
     for (const slot of openSlots) {
       const candidate = [...availableEmps]
-        .sort(pickOrder(slot.location))
+        .sort(pickOrder(slot.location, shiftLengthHours(slot.start, slot.end)))
         .find(
           (e: Employee) =>
             unclaimed.has(e.id) &&
@@ -344,17 +350,12 @@ export async function autoSchedulePeriod(
     // who was is already at their weekly cap.
     unfilled += openSlots.length - staffable.length
 
-    // Pass 2 hands the longest shifts to whoever has the fewest hours so far.
-    // Assigning in coverage order instead would be self-reinforcing: the
-    // opening shift is the SHORT one, so the least-worked people would keep
-    // landing on it and stay least-worked, while whoever got pushed onto the
-    // long mid shift would keep getting it. That produced a 44-hour spread
-    // across an otherwise identical crew.
-    const byLongestFirst = [...staffable].sort(
-      (a, b) => shiftLengthHours(b.start, b.end) - shiftLengthHours(a.start, a.end)
-    )
-
-    for (const slot of byLongestFirst) {
+    // Pass 2 fills them in the same operational priority pass 1 used, so opens
+    // and closes are staffed before mids and the two passes agree on order.
+    // Balance is handled by the picker instead: a longer-than-average shift
+    // goes to whoever has worked least and a shorter one to whoever has worked
+    // most, which rotates people through shift types rather than pinning them.
+    for (const slot of staffable) {
 
       // Fewest hours so far goes next. Only people qualified for the position
       // are eligible; Chef prefers a manager among those who can actually cook.
@@ -363,7 +364,7 @@ export async function autoSchedulePeriod(
           eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
           underCap(e)
         )
-        .sort(pickOrder(slot.location))
+        .sort(pickOrder(slot.location, shiftLengthHours(slot.start, slot.end)))
       const pool = slot.isChef
         ? [...eligible.filter(e => e.is_manager), ...eligible.filter(e => !e.is_manager)]
         : [...eligible.filter(e => !e.is_manager), ...eligible.filter(e => e.is_manager)]
