@@ -15,6 +15,8 @@ export interface Employee {
   phone: string | null
   is_manager: boolean
   skills: Skill[]
+  shifts: number[]        // shift numbers this person can work, e.g. [2, 3]
+  locations: Location[]   // where they can work
   active: boolean
   created_at: string
 }
@@ -168,6 +170,40 @@ export const POSITION_SKILL: Record<Position, Skill> = {
 /** Whether an employee is qualified to work a position. */
 export function canWork(employee: Employee, position: Position): boolean {
   return (employee.skills ?? []).includes(POSITION_SKILL[position])
+}
+
+/**
+ * Whether an employee can work a location. Treated as unrestricted when unset
+ * so a row written before locations existed stays schedulable.
+ */
+export function canWorkLocation(employee: Employee, location: Location): boolean {
+  const locs = employee.locations ?? []
+  return locs.length === 0 || locs.includes(location)
+}
+
+/** Whether an employee can work a given shift number. Unset = any shift. */
+export function canWorkShift(employee: Employee, slotOrder: number): boolean {
+  const shifts = employee.shifts ?? []
+  return shifts.length === 0 || shifts.includes(slotOrder)
+}
+
+/** Every constraint at once: position skill, location and shift. */
+export function isEligible(
+  employee: Employee,
+  position: Position,
+  location: Location,
+  slotOrder: number
+): boolean {
+  return (
+    canWork(employee, position) &&
+    canWorkLocation(employee, location) &&
+    canWorkShift(employee, slotOrder)
+  )
+}
+
+export const LOCATION_LABELS: Record<Location, string> = {
+  food_village: 'Food Village',
+  stadium: 'Stadium',
 }
 
 export function skillLabel(skill: Skill): string {

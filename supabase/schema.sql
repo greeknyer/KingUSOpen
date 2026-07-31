@@ -70,6 +70,13 @@ CREATE TABLE IF NOT EXISTS employees (
   is_manager boolean NOT NULL DEFAULT false,
   skills text[] NOT NULL DEFAULT '{}'
     CHECK (skills <@ ARRAY['register', 'prep', 'chef', 'salads']::text[]),
+  -- Which shift numbers this person can ever work. A standing preference, not
+  -- per-day: the availability table still handles "off on Tuesday".
+  shifts int[] NOT NULL DEFAULT '{1,2,3}'
+    CHECK (shifts <@ ARRAY[1, 2, 3]),
+  -- Some staff work the Stadium only, or Food Village only.
+  locations text[] NOT NULL DEFAULT '{food_village,stadium}'
+    CHECK (locations <@ ARRAY['food_village', 'stadium']::text[]),
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
@@ -81,6 +88,7 @@ ALTER TABLE tournament_settings
   ADD COLUMN IF NOT EXISTS stadium_manager_id uuid REFERENCES employees(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_employees_skills ON employees USING gin (skills);
+CREATE INDEX IF NOT EXISTS idx_employees_locations ON employees USING gin (locations);
 
 -- Availability (per employee per date)
 CREATE TABLE IF NOT EXISTS availability (

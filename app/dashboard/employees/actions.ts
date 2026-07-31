@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { SKILLS, Skill } from '@/lib/types'
+import { SKILLS, Skill, Location, SLOTS_PER_LOCATION } from '@/lib/types'
 
 /**
  * Skills arrive as repeated `skills` checkbox values. Filtered against the
@@ -15,6 +15,23 @@ function readSkills(formData: FormData): Skill[] {
     .getAll('skills')
     .map(String)
     .filter((s): s is Skill => valid.has(s))
+}
+
+/** Shift numbers the app can produce — Food Village has the most, at three. */
+function readShifts(formData: FormData): number[] {
+  const max = Math.max(...Object.values(SLOTS_PER_LOCATION))
+  return formData
+    .getAll('shifts')
+    .map(v => parseInt(String(v), 10))
+    .filter(n => Number.isInteger(n) && n >= 1 && n <= max)
+}
+
+function readLocations(formData: FormData): Location[] {
+  const valid = new Set<string>(['food_village', 'stadium'])
+  return formData
+    .getAll('locations')
+    .map(String)
+    .filter((l): l is Location => valid.has(l))
 }
 
 export type SaveResult = { ok: true } | { ok: false; error: string }
@@ -45,6 +62,8 @@ export async function addEmployee(formData: FormData): Promise<SaveResult> {
     phone: (formData.get('phone') as string) || null,
     is_manager: formData.get('is_manager') === 'on',
     skills: readSkills(formData),
+    shifts: readShifts(formData),
+    locations: readLocations(formData),
   })
   if (error) return toResult(error)
   revalidatePath('/dashboard/employees')
@@ -60,6 +79,8 @@ export async function updateEmployee(id: string, formData: FormData): Promise<Sa
     phone: (formData.get('phone') as string) || null,
     is_manager: formData.get('is_manager') === 'on',
     skills: readSkills(formData),
+    shifts: readShifts(formData),
+    locations: readLocations(formData),
   }).eq('id', id)
   if (error) return toResult(error)
   revalidatePath('/dashboard/employees')

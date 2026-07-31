@@ -1,8 +1,22 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Employee, SKILLS, Skill } from '@/lib/types'
+import {
+  Employee, SKILLS, Location, LOCATION_LABELS, SLOTS_PER_LOCATION,
+} from '@/lib/types'
+
 import { addEmployee, updateEmployee, toggleEmployeeActive } from './actions'
+
+const LOCATION_OPTIONS: { id: Location }[] = [
+  { id: 'food_village' },
+  { id: 'stadium' },
+]
+
+// Food Village runs the most shifts, so its count bounds the choices.
+const SHIFT_OPTIONS = Array.from(
+  { length: Math.max(...Object.values(SLOTS_PER_LOCATION)) },
+  (_, i) => i + 1
+)
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -82,6 +96,56 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
                 className="w-5 h-5 accent-gray-900"
               />
               <span className="text-sm text-gray-700">{s.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-500 mb-1.5">
+          Can work at *
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          {LOCATION_OPTIONS.map(l => (
+            <label
+              key={l.id}
+              className="flex items-center gap-2.5 px-3 py-2.5 min-h-[44px] rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition"
+            >
+              <input
+                type="checkbox"
+                name="locations"
+                value={l.id}
+                defaultChecked={employee ? (employee.locations ?? []).includes(l.id) : true}
+                className="w-5 h-5 accent-gray-900"
+              />
+              <span className="text-sm text-gray-700">{LOCATION_LABELS[l.id]}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-500 mb-1.5">
+          Can work these shifts *
+        </label>
+        <p className="text-xs text-gray-400 mb-2">
+          Food Village shift times are set in Tournament Setup. Stadium days run one or two
+          shifts depending on their hours.
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {SHIFT_OPTIONS.map(n => (
+            <label
+              key={n}
+              className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition"
+            >
+              <input
+                type="checkbox"
+                name="shifts"
+                value={n}
+                defaultChecked={employee ? (employee.shifts ?? []).includes(n) : true}
+                className="w-5 h-5 accent-gray-900"
+              />
+              <span className="text-sm text-gray-700">#{n}</span>
             </label>
           ))}
         </div>
@@ -190,6 +254,23 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
                           {s.label}
                         </span>
                       ))
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1 items-center mt-1">
+                    {/* Only worth showing when it actually narrows things. */}
+                    {(emp.locations ?? []).length === 1 && (
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                        {LOCATION_LABELS[emp.locations[0]]} only
+                      </span>
+                    )}
+                    {(emp.shifts ?? []).length > 0 &&
+                      emp.shifts.length < SHIFT_OPTIONS.length && (
+                        <span className="text-[11px] px-2 py-0.5 rounded bg-gray-50 text-gray-500 border border-gray-100">
+                          Shift {[...emp.shifts].sort((a, b) => a - b).map(n => `#${n}`).join(' ')}
+                        </span>
+                      )}
+                    {(emp.shifts ?? []).length === 0 && (
+                      <span className="text-[11px] text-amber-600">No shifts set</span>
                     )}
                   </div>
                 </td>

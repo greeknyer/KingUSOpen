@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
-  ShiftTemplate, shiftsForDay, canWork, Position,
+  ShiftTemplate, shiftsForDay, canWork, canWorkLocation, isEligible, Position,
 } from '@/lib/types'
 
 export async function autoSchedulePeriod(
@@ -145,7 +145,12 @@ export async function autoSchedulePeriod(
     // work open to close rather than a split shift, so their position's later
     // slots need no one — recorded here and skipped below.
     const managerCovers = new Set<string>()
-    if (stadiumManager && stadiumShifts.length > 0 && isAvail(stadiumManager.id, date)) {
+    if (
+      stadiumManager &&
+      stadiumShifts.length > 0 &&
+      isAvail(stadiumManager.id, date) &&
+      canWorkLocation(stadiumManager, 'stadium')
+    ) {
       const pos =
         STADIUM_POSITIONS.find(p => canWork(stadiumManager, p.id)) ?? STADIUM_POSITIONS[0]
       const stadiumHours = getHoursForDate(hoursMap, 'stadium', date, settings)
@@ -181,7 +186,9 @@ export async function autoSchedulePeriod(
         (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
 
       const eligible = availableEmps
-        .filter((e: Employee) => canWork(e, slot.position as Position))
+        .filter((e: Employee) =>
+          isEligible(e, slot.position as Position, slot.location, slot.slotOrder)
+        )
         .sort(sortByHours)
       const pool = slot.isChef
         ? [...eligible.filter(e => e.is_manager), ...eligible.filter(e => !e.is_manager)]
