@@ -529,6 +529,11 @@ export default function ScheduleClient({
             className="px-4 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition">
             {pending ? 'Working…' : '⚡ Auto-Schedule'}
           </button>
+          {/* A sheet for the board, without the editing chrome. */}
+          <a href={`/dashboard/schedule/print?period=${activePeriod}`} target="_blank" rel="noopener"
+            className="px-4 py-2.5 min-h-[44px] flex items-center border border-gray-200 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-50 active:bg-gray-100 transition">
+            🖨 Print
+          </a>
           {hasDraft && (
             <>
               <button onClick={handlePublish} disabled={pending}

@@ -28,7 +28,7 @@ export default function Sidebar() {
   return (
     // Narrow icon rail by default so the schedule grid gets the width back on
     // an iPad; full labelled sidebar from xl up (desktop, iPad Pro landscape).
-    <div className="w-20 xl:w-56 shrink-0 bg-white border-r border-gray-200 flex flex-col h-full">
+    <div className="no-print w-20 xl:w-56 shrink-0 bg-white border-r border-gray-200 flex flex-col h-full">
       <div className="p-3 xl:p-5 border-b border-gray-100 text-center xl:text-left">
         <div className="text-lg">🎾</div>
         <div className="hidden xl:block text-sm font-bold text-gray-900 mt-1">King US Open</div>

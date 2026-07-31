@@ -54,3 +54,57 @@ label,
     transform: none;
   }
 }
+
+/* ─────────────────────────────────────────────
+   Printing a week to put on the board
+   ───────────────────────────────────────────── */
+@media print {
+  /* Landscape: seven days across is what makes a week legible on a wall. */
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  /* Navigation, buttons and period pickers are for the person driving the
+     app, not for the sheet. */
+  .no-print {
+    display: none !important;
+  }
+
+  /* The dashboard shell is a fixed-height flex box with its own scrolling
+     region, which prints as a single clipped page. Undo that so the content
+     flows and paginates normally. */
+  html,
+  body,
+  .h-screen,
+  .overflow-hidden,
+  .overflow-y-auto,
+  .overflow-x-auto {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Print backgrounds and rules — table borders are what makes a grid
+     readable, and browsers drop them by default to save ink. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Keep a location's table whole rather than splitting a position's row
+     across the fold. */
+  table {
+    page-break-inside: auto;
+  }
+  tr,
+  .break-inside-avoid {
+    page-break-inside: avoid;
+  }
+  thead {
+    display: table-header-group; /* repeat headers on a second page */
+  }
+  .break-before-page {
+    page-break-before: always;
+  }
+}

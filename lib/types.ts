@@ -294,7 +294,7 @@ export interface TimeEntry {
 
 // Position metadata. `shifts` narrows which of the location's shifts a position
 // actually runs — omitted means all of them.
-type PositionMeta = {
+export type PositionMeta = {
   id: Position
   label: string
   section?: string
