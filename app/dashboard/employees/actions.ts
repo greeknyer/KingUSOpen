@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { SKILLS, Skill, Location, SLOTS_PER_LOCATION } from '@/lib/types'
+import { SKILLS, Skill, Location, ShiftPeriod, SHIFT_PERIODS, WeeklyAvailability, DAY_LABELS } from '@/lib/types'
 
 /**
  * Skills arrive as repeated `skills` checkbox values. Filtered against the
@@ -17,13 +17,37 @@ function readSkills(formData: FormData): Skill[] {
     .filter((s): s is Skill => valid.has(s))
 }
 
-/** Shift numbers the app can produce — Food Village has the most, at three. */
-function readShifts(formData: FormData): number[] {
-  const max = Math.max(...Object.values(SLOTS_PER_LOCATION))
-  return formData
-    .getAll('shifts')
-    .map(v => parseInt(String(v), 10))
-    .filter(n => Number.isInteger(n) && n >= 1 && n <= max)
+/**
+ * The weekly grid arrives as a JSON blob from a hidden field. Rebuilt key by
+ * key against the known days and shifts so nothing unexpected reaches the
+ * column, and so a malformed value degrades to "no availability" for that day
+ * rather than failing the whole save.
+ */
+function readWeeklyAvailability(formData: FormData): WeeklyAvailability {
+  const validShifts = new Set<string>(SHIFT_PERIODS.map(s => s.id))
+  const out: WeeklyAvailability = {}
+  let parsed: Record<string, unknown> = {}
+  try {
+    parsed = JSON.parse(String(formData.get('weekly_availability') ?? '{}'))
+  } catch {
+    parsed = {}
+  }
+  DAY_LABELS.forEach((_, i) => {
+    const raw = parsed[String(i)]
+    const list = Array.isArray(raw) ? raw.map(String) : []
+    out[String(i)] = SHIFT_PERIODS
+      .filter(s => list.includes(s.id) && validShifts.has(s.id))
+      .map(s => s.id) as ShiftPeriod[]
+  })
+  return out
+}
+
+/** Blank means no cap. Out-of-range values are dropped rather than clamped. */
+function readMaxShifts(formData: FormData): number | null {
+  const raw = String(formData.get('max_shifts_per_week') ?? '').trim()
+  if (!raw) return null
+  const n = parseInt(raw, 10)
+  return Number.isInteger(n) && n >= 1 && n <= 21 ? n : null
 }
 
 function readLocations(formData: FormData): Location[] {
@@ -62,8 +86,9 @@ export async function addEmployee(formData: FormData): Promise<SaveResult> {
     phone: (formData.get('phone') as string) || null,
     is_manager: formData.get('is_manager') === 'on',
     skills: readSkills(formData),
-    shifts: readShifts(formData),
     locations: readLocations(formData),
+    weekly_availability: readWeeklyAvailability(formData),
+    max_shifts_per_week: readMaxShifts(formData),
   })
   if (error) return toResult(error)
   revalidatePath('/dashboard/employees')
@@ -79,8 +104,9 @@ export async function updateEmployee(id: string, formData: FormData): Promise<Sa
     phone: (formData.get('phone') as string) || null,
     is_manager: formData.get('is_manager') === 'on',
     skills: readSkills(formData),
-    shifts: readShifts(formData),
     locations: readLocations(formData),
+    weekly_availability: readWeeklyAvailability(formData),
+    max_shifts_per_week: readMaxShifts(formData),
   }).eq('id', id)
   if (error) return toResult(error)
   revalidatePath('/dashboard/employees')

@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import {
   TournamentSettings, OperatingHours, Register4Config, Location, ShiftTemplate, Employee,
   DEFAULT_HOURS, DEFAULT_SHIFT_TEMPLATES, HANDOFF_MIN_HOURS, formatTime, hoursKey,
-  shiftsForDay,
+  shiftsForDay, shiftLabel,
 } from '@/lib/types'
 import {
   saveTournamentSettings, saveOperatingHours, saveRegister4Config, saveShiftTemplates,
@@ -575,7 +575,7 @@ export default function SetupClient({
                                 <div className="text-[11px] text-gray-500 leading-tight">
                                   {shifts.map((s, n) => (
                                     <div key={n}>
-                                      <span className="text-gray-400">#{n + 1}</span>{' '}
+                                      <span className="text-gray-400">{shiftLabel(loc.id, s.slot_order)}</span>{' '}
                                       {formatTime(s.start)} → {formatTime(s.end)}
                                     </div>
                                   ))}
@@ -643,7 +643,7 @@ export default function SetupClient({
               {fvTemplates.map(t => (
                 <tr key={t.slot_order} className="border-t border-gray-50">
                   <td className="px-4 py-2">
-                    <span className="text-sm font-semibold text-gray-900">#{t.slot_order}</span>
+                    <span className="text-sm font-semibold text-gray-900">{shiftLabel('food_village', t.slot_order)}</span>
                   </td>
                   <td className="px-3 py-2">
                     <input
@@ -682,7 +682,7 @@ export default function SetupClient({
             <div className="text-xs text-amber-800 space-y-0.5">
               {templatePreview.map(s => (
                 <div key={s.slot_order}>
-                  <span className="text-amber-500">#{s.slot_order}</span>{' '}
+                  <span className="text-amber-500">{shiftLabel('food_village', s.slot_order)}</span>{' '}
                   {formatTime(s.start)} → {formatTime(s.end)}
                 </div>
               ))}

@@ -5,7 +5,7 @@ import {
   Employee, ScheduleAssignment, TournamentSettings, OperatingHours, Register4Config,
   FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position,
   Location, buildHoursMap, getHoursForDate, formatHoursRange,
-  ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay,
+  ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
 
@@ -77,7 +77,7 @@ function AssignmentModal({
       <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md my-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4 gap-3">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{posLabel} · Slot {slotOrder}</h2>
+            <h2 className="text-lg font-bold text-gray-900">{posLabel} · {shiftLabel(location as Location, slotOrder)}</h2>
             <p className="text-sm text-gray-400">{d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
           </div>
           <button
@@ -408,7 +408,7 @@ export default function ScheduleClient({
                         </td>
                       )}
                       <td className="px-2 py-1">
-                        <span className="text-[10px] text-gray-400 font-medium">#{slotOrder}</span>
+                        <span className="text-[10px] text-gray-400 font-semibold">{shiftLabel('food_village', slotOrder)}</span>
                       </td>
                       {currentDates.map(date => {
                         // Check if register 4 is active for this date
@@ -493,7 +493,7 @@ export default function ScheduleClient({
                         </td>
                       )}
                       <td className="px-2 py-1">
-                        <span className="text-[10px] text-gray-400 font-medium">#{slotOrder}</span>
+                        <span className="text-[10px] text-gray-400 font-semibold">{shiftLabel('stadium', slotOrder)}</span>
                       </td>
                       {currentDates.map(date => {
                         if (!isLocationOpen('stadium', date)) {

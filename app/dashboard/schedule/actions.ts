@@ -70,6 +70,20 @@ export async function autoSchedulePeriod(
   const assignments: object[] = []
   let unfilled = 0
 
+  // Shifts given to each employee across this period. max_shifts_per_week caps
+  // it, so a part-timer stays capped however short-staffed the week gets.
+  const periodShifts = new Map<string, number>()
+
+  function underCap(e: Employee): boolean {
+    const cap = e.max_shifts_per_week
+    if (cap == null) return true
+    return (periodShifts.get(e.id) ?? 0) < cap
+  }
+
+  function recordShift(id: string) {
+    periodShifts.set(id, (periodShifts.get(id) ?? 0) + 1)
+  }
+
   // Designated managers are fixed for the tournament and never enter the
   // general pool: the GM runs Food Village from outside the position grid, and
   // the Stadium manager is always at the Stadium.
@@ -166,6 +180,7 @@ export async function autoSchedulePeriod(
         status: 'draft',
       })
       assignedToday.add(stadiumManager.id)
+      recordShift(stadiumManager.id)
       managerCovers.add(pos.id)
       hoursTally.set(
         stadiumManager.id,
@@ -187,7 +202,8 @@ export async function autoSchedulePeriod(
 
       const eligible = availableEmps
         .filter((e: Employee) =>
-          isEligible(e, slot.position as Position, slot.location, slot.slotOrder)
+          isEligible(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
+          underCap(e)
         )
         .sort(sortByHours)
       const pool = slot.isChef
@@ -212,6 +228,7 @@ export async function autoSchedulePeriod(
         status: 'draft',
       })
       assignedToday.add(emp.id)
+      recordShift(emp.id)
       hoursTally.set(
         emp.id,
         (hoursTally.get(emp.id) ?? 0) + shiftLengthHours(slot.start, slot.end)

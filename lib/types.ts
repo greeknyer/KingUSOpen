@@ -15,10 +15,62 @@ export interface Employee {
   phone: string | null
   is_manager: boolean
   skills: Skill[]
-  shifts: number[]        // shift numbers this person can work, e.g. [2, 3]
-  locations: Location[]   // where they can work
+  locations: Location[]                        // where they can work
+  weekly_availability: WeeklyAvailability      // which shifts, per day of week
+  max_shifts_per_week: number | null           // cap per period; null = no cap
   active: boolean
   created_at: string
+}
+
+/** The three shifts, named as the crew refer to them. */
+export type ShiftPeriod = 'am' | 'mid' | 'pm'
+
+export const SHIFT_PERIODS: { id: ShiftPeriod; label: string }[] = [
+  { id: 'am', label: 'AM' },
+  { id: 'mid', label: 'MID' },
+  { id: 'pm', label: 'PM' },
+]
+
+/**
+ * Which named shift a slot represents. Food Village runs all three; the Stadium
+ * runs at most two, so its second slot is the PM shift rather than the mid.
+ */
+export function shiftPeriodFor(location: Location, slotOrder: number): ShiftPeriod {
+  if (location === 'stadium') return slotOrder === 1 ? 'am' : 'pm'
+  return slotOrder === 1 ? 'am' : slotOrder === 2 ? 'mid' : 'pm'
+}
+
+export function shiftLabel(location: Location, slotOrder: number): string {
+  const period = shiftPeriodFor(location, slotOrder)
+  return SHIFT_PERIODS.find(s => s.id === period)?.label ?? String(slotOrder)
+}
+
+/** Shifts workable on each weekday, keyed '0' = Monday through '6' = Sunday. */
+export type WeeklyAvailability = Record<string, ShiftPeriod[]>
+
+export const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+/** Monday-based weekday index for a YYYY-MM-DD date, matching DAY_LABELS. */
+export function weekdayIndex(date: string): number {
+  const d = new Date(date + 'T00:00:00')
+  return (d.getDay() + 6) % 7
+}
+
+export const OPEN_AVAILABILITY: WeeklyAvailability = {
+  '0': ['am', 'mid', 'pm'], '1': ['am', 'mid', 'pm'], '2': ['am', 'mid', 'pm'],
+  '3': ['am', 'mid', 'pm'], '4': ['am', 'mid', 'pm'], '5': ['am', 'mid', 'pm'],
+  '6': ['am', 'mid', 'pm'],
+}
+
+export const WEEKDAYS_ONLY_AVAILABILITY: WeeklyAvailability = {
+  '0': ['am', 'mid', 'pm'], '1': ['am', 'mid', 'pm'], '2': ['am', 'mid', 'pm'],
+  '3': ['am', 'mid', 'pm'], '4': ['am', 'mid', 'pm'], '5': [], '6': [],
+}
+
+/** True when someone can work every shift on every day. */
+export function isOpenAvailability(w: WeeklyAvailability | null | undefined): boolean {
+  if (!w) return true
+  return DAY_LABELS.every((_, i) => (w[String(i)] ?? []).length === SHIFT_PERIODS.length)
 }
 
 export interface TournamentSettings {
@@ -181,23 +233,36 @@ export function canWorkLocation(employee: Employee, location: Location): boolean
   return locs.length === 0 || locs.includes(location)
 }
 
-/** Whether an employee can work a given shift number. Unset = any shift. */
-export function canWorkShift(employee: Employee, slotOrder: number): boolean {
-  const shifts = employee.shifts ?? []
-  return shifts.length === 0 || shifts.includes(slotOrder)
+/**
+ * Whether an employee works this shift on this date's weekday. A missing
+ * pattern reads as unrestricted so a row written before the column existed
+ * stays schedulable rather than dropping out of every schedule.
+ */
+export function canWorkShiftOn(
+  employee: Employee,
+  date: string,
+  location: Location,
+  slotOrder: number
+): boolean {
+  const pattern = employee.weekly_availability
+  if (!pattern) return true
+  const day = pattern[String(weekdayIndex(date))]
+  if (day === undefined) return true
+  return day.includes(shiftPeriodFor(location, slotOrder))
 }
 
-/** Every constraint at once: position skill, location and shift. */
+/** Every standing constraint at once: skill, location, and the weekly pattern. */
 export function isEligible(
   employee: Employee,
   position: Position,
   location: Location,
-  slotOrder: number
+  slotOrder: number,
+  date: string
 ): boolean {
   return (
     canWork(employee, position) &&
     canWorkLocation(employee, location) &&
-    canWorkShift(employee, slotOrder)
+    canWorkShiftOn(employee, date, location, slotOrder)
   )
 }
 
