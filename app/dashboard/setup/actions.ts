@@ -23,6 +23,45 @@ function toResult(error: { message: string; code?: string } | null): SaveResult 
   return { ok: false, error: error.message }
 }
 
+
+/**
+ * Replace every row for a year in one go.
+ *
+ * These screens always submit the complete set, so the table is rebuilt rather
+ * than diffed. The delete and insert are separate statements, though, and there
+ * is no transaction across them — so a rejected insert used to leave the table
+ * EMPTY, which is worse than not saving at all. An empty shift_templates makes
+ * every position fall back to a split of the day's hours, silently dropping the
+ * mid shift from the registers.
+ *
+ * So the current rows are read first and put back if the insert fails.
+ */
+async function replaceYear(
+  table: string,
+  year: number,
+  rows: Record<string, unknown>[]
+): Promise<SaveResult> {
+  const supabase = await createClient()
+
+  const { data: previous, error: readError } = await supabase
+    .from(table).select('*').eq('year', year)
+  if (readError) return toResult(readError)
+
+  const { error: delError } = await supabase.from(table).delete().eq('year', year)
+  if (delError) return toResult(delError)
+
+  if (rows.length === 0) return { ok: true }
+
+  const { error } = await supabase.from(table).insert(rows)
+  if (!error) return { ok: true }
+
+  // Put back what was there, so a failed save changes nothing.
+  if (previous && previous.length > 0) {
+    await supabase.from(table).insert(previous)
+  }
+  return toResult(error)
+}
+
 export async function saveTournamentSettings(formData: FormData): Promise<SaveResult> {
   const supabase = await createClient()
   const year = parseInt(formData.get('year') as string)
@@ -55,27 +94,17 @@ export async function saveOperatingHours(
     close_time: string | null
   }[]
 ): Promise<SaveResult> {
-  const supabase = await createClient()
-
-  // Replace the whole year's grid in one go — the Setup screen always submits
-  // every day it rendered, so a delete-then-insert keeps the table in step with
-  // the form even when pre_tournament_days shrinks.
-  const { error: delError } = await supabase.from('operating_hours').delete().eq('year', year)
-  if (delError) return toResult(delError)
-
-  if (rows.length > 0) {
-    const { error } = await supabase.from('operating_hours').insert(
-      rows.map(r => ({
-        year,
-        ...r,
-        // A blank time from a form arrives as '' — store it as NULL so
-        // close_time NULL keeps meaning "open-ended".
-        open_time: r.open_time || null,
-        close_time: r.close_time || null,
-      }))
-    )
-    if (error) return toResult(error)
-  }
+  const result = await replaceYear('operating_hours', year,
+    rows.map(r => ({
+      year,
+      ...r,
+      // A blank time from a form arrives as '' — store it as NULL so
+      // close_time NULL keeps meaning "open-ended".
+      open_time: r.open_time || null,
+      close_time: r.close_time || null,
+    }))
+  )
+  if (!result.ok) return result
   revalidatePath('/dashboard/setup')
   revalidatePath('/dashboard/schedule')
   return { ok: true }
@@ -85,17 +114,10 @@ export async function saveOptionalPositions(
   year: number,
   configs: { period: number; position: string; is_active: boolean }[]
 ): Promise<SaveResult> {
-  const supabase = await createClient()
-
-  const { error: delError } = await supabase.from('register4_config').delete().eq('year', year)
-  if (delError) return toResult(delError)
-
-  if (configs.length > 0) {
-    const { error } = await supabase.from('register4_config').insert(
-      configs.map(c => ({ year, ...c }))
-    )
-    if (error) return toResult(error)
-  }
+  const result = await replaceYear('register4_config', year,
+    configs.map(c => ({ year, ...c }))
+  )
+  if (!result.ok) return result
   revalidatePath('/dashboard/setup')
   revalidatePath('/dashboard/schedule')
   return { ok: true }
@@ -105,22 +127,15 @@ export async function saveShiftTemplates(
   year: number,
   templates: { location: string; section: string | null; slot_order: number; start_time: string; end_time: string | null }[]
 ): Promise<SaveResult> {
-  const supabase = await createClient()
-
-  const { error: delError } = await supabase.from('shift_templates').delete().eq('year', year)
-  if (delError) return toResult(delError)
-
-  if (templates.length > 0) {
-    const { error } = await supabase.from('shift_templates').insert(
-      templates.map(t => ({
-        year,
-        ...t,
-        // A blank end means the shift runs to that day's close.
-        end_time: t.end_time || null,
-      }))
-    )
-    if (error) return toResult(error)
-  }
+  const result = await replaceYear('shift_templates', year,
+    templates.map(t => ({
+      year,
+      ...t,
+      // A blank end means the shift runs to that day's close.
+      end_time: t.end_time || null,
+    }))
+  )
+  if (!result.ok) return result
   revalidatePath('/dashboard/setup')
   revalidatePath('/dashboard/schedule')
   return { ok: true }

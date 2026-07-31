@@ -567,6 +567,29 @@ export function shiftsForDay(
   ).sort((a, b) => a.slot_order - b.slot_order)
 
   if (relevant.length === 0) {
+    // The Stadium has no templates by design and splits its own hours. The Food
+    // Village does have them, so an empty set means they are missing rather
+    // than absent — fall back to the defaults instead of splitting the day,
+    // which would silently drop the mid shift from the registers.
+    if (location === 'food_village') {
+      const fallback = section === 'Kitchen'
+        ? DEFAULT_KITCHEN_TEMPLATES
+        : DEFAULT_SHIFT_TEMPLATES.food_village
+      return shiftsForDay(
+        location,
+        hours,
+        fallback.map((f, i) => ({
+          id: `fallback-${i}`,
+          year: 0,
+          location,
+          section: section ?? null,
+          slot_order: f.slot_order,
+          start_time: f.start_time,
+          end_time: f.end_time,
+        })),
+        section
+      )
+    }
     return planShifts(hours.open_time, hours.close_time).map((s, i) => ({
       slot_order: i + 1,
       start: s.start,
