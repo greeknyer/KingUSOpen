@@ -68,6 +68,7 @@ export default function SetupClient({
 }) {
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
   const [year, setYear] = useState(settings?.year ?? new Date().getFullYear())
   const [startDate, setStartDate] = useState(settings?.start_date ?? '')
   const [preDays, setPreDays] = useState(settings?.pre_tournament_days ?? 3)
@@ -167,9 +168,9 @@ export default function SetupClient({
   }
 
   async function handleSaveTemplates() {
-    setMessage('')
+    setMessage(''); setError('')
     startTransition(async () => {
-      await saveShiftTemplates(
+      const r = await saveShiftTemplates(
         year,
         fvTemplates.map(t => ({
           location: 'food_village',
@@ -178,7 +179,8 @@ export default function SetupClient({
           end_time: t.end_time || null,
         }))
       )
-      setMessage('Food Village shift times saved!')
+      if (r.ok) setMessage('Food Village shift times saved!')
+      else setError(r.error)
     })
   }
 
@@ -248,7 +250,7 @@ export default function SetupClient({
 
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault()
-    setMessage('')
+    setMessage(''); setError('')
     const fd = new FormData()
     fd.set('year', String(year))
     fd.set('start_date', startDate)
@@ -256,13 +258,14 @@ export default function SetupClient({
     fd.set('general_manager_id', gmId)
     fd.set('stadium_manager_id', stadiumMgrId)
     startTransition(async () => {
-      await saveTournamentSettings(fd)
-      setMessage('Tournament settings saved!')
+      const r = await saveTournamentSettings(fd)
+      if (r.ok) setMessage('Tournament settings saved!')
+      else setError(r.error)
     })
   }
 
   async function handleSaveHours() {
-    setMessage('')
+    setMessage(''); setError('')
     const rows: {
       location: string; period: number; day_index: number
       is_open: boolean; open_time: string | null; close_time: string | null
@@ -286,20 +289,22 @@ export default function SetupClient({
     }
 
     startTransition(async () => {
-      await saveOperatingHours(year, rows)
-      setMessage('Hours of operation saved!')
+      const r = await saveOperatingHours(year, rows)
+      if (r.ok) setMessage('Hours of operation saved!')
+      else setError(r.error)
     })
   }
 
   async function handleSaveReg4() {
-    setMessage('')
+    setMessage(''); setError('')
     const configs: { period: number; is_active: boolean }[] = []
     reg4Active.forEach((is_active, period) => {
       configs.push({ period, is_active })
     })
     startTransition(async () => {
-      await saveRegister4Config(year, configs)
-      setMessage('Food Village Register 4 config saved!')
+      const r = await saveRegister4Config(year, configs)
+      if (r.ok) setMessage('Food Village Register 4 config saved!')
+      else setError(r.error)
     })
   }
 
@@ -308,6 +313,13 @@ export default function SetupClient({
       {message && (
         <div className="px-4 py-2.5 rounded-lg bg-emerald-50 border border-emerald-100 text-sm text-emerald-700">
           {message}
+        </div>
+      )}
+
+      {error && (
+        <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          <div className="font-semibold mb-0.5">Not saved</div>
+          {error}
         </div>
       )}
 

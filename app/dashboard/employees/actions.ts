@@ -17,35 +17,61 @@ function readSkills(formData: FormData): Skill[] {
     .filter((s): s is Skill => valid.has(s))
 }
 
-export async function addEmployee(formData: FormData) {
+export type SaveResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * Turn a Supabase error into something the form can show. A write that Postgres
+ * rejects otherwise looks identical to one that succeeded — 42703 (missing
+ * column) in particular means a migration hasn't been run yet.
+ */
+function toResult(error: { message: string; code?: string } | null): SaveResult {
+  if (!error) return { ok: true }
+  if (error.code === '42703' || error.code === 'PGRST205') {
+    return {
+      ok: false,
+      error:
+        'The database is missing columns this form writes. Run the pending migrations in ' +
+        `supabase/migrations, then try again. (${error.message})`,
+    }
+  }
+  return { ok: false, error: error.message }
+}
+
+export async function addEmployee(formData: FormData): Promise<SaveResult> {
   const supabase = await createClient()
-  await supabase.from('employees').insert({
+  const { error } = await supabase.from('employees').insert({
     name: formData.get('name') as string,
     email: (formData.get('email') as string) || null,
     phone: (formData.get('phone') as string) || null,
     is_manager: formData.get('is_manager') === 'on',
     skills: readSkills(formData),
   })
+  if (error) return toResult(error)
   revalidatePath('/dashboard/employees')
   revalidatePath('/dashboard/schedule')
+  return { ok: true }
 }
 
-export async function updateEmployee(id: string, formData: FormData) {
+export async function updateEmployee(id: string, formData: FormData): Promise<SaveResult> {
   const supabase = await createClient()
-  await supabase.from('employees').update({
+  const { error } = await supabase.from('employees').update({
     name: formData.get('name') as string,
     email: (formData.get('email') as string) || null,
     phone: (formData.get('phone') as string) || null,
     is_manager: formData.get('is_manager') === 'on',
     skills: readSkills(formData),
   }).eq('id', id)
+  if (error) return toResult(error)
   revalidatePath('/dashboard/employees')
   revalidatePath('/dashboard/schedule')
+  return { ok: true }
 }
 
-export async function toggleEmployeeActive(id: string, active: boolean) {
+export async function toggleEmployeeActive(id: string, active: boolean): Promise<SaveResult> {
   const supabase = await createClient()
-  await supabase.from('employees').update({ active }).eq('id', id)
+  const { error } = await supabase.from('employees').update({ active }).eq('id', id)
+  if (error) return toResult(error)
   revalidatePath('/dashboard/employees')
   revalidatePath('/dashboard/schedule')
+  return { ok: true }
 }

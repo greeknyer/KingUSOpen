@@ -20,22 +20,30 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () => void }) {
   const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    setError(null)
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      if (employee) {
-        await updateEmployee(employee.id, fd)
-      } else {
-        await addEmployee(fd)
-      }
-      onClose()
+      const result = employee
+        ? await updateEmployee(employee.id, fd)
+        : await addEmployee(fd)
+      // Stay open on failure so the edits aren't lost behind a closed dialog.
+      if (result.ok) onClose()
+      else setError(result.error)
     })
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {error && (
+        <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          <div className="font-semibold mb-0.5">Not saved</div>
+          {error}
+        </div>
+      )}
       <div>
         <label className="block text-sm font-semibold text-gray-500 mb-1.5">Name *</label>
         <input name="name" defaultValue={employee?.name} required
@@ -110,6 +118,7 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
   const [filter, setFilter] = useState<'active' | 'inactive' | 'all'>('active')
   const [showAdd, setShowAdd] = useState(false)
   const [editing, setEditing] = useState<Employee | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const filtered = employees.filter(e => {
@@ -119,11 +128,21 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
   })
 
   function handleToggle(e: Employee) {
-    startTransition(() => toggleEmployeeActive(e.id, !e.active))
+    setListError(null)
+    startTransition(async () => {
+      const result = await toggleEmployeeActive(e.id, !e.active)
+      if (!result.ok) setListError(result.error)
+    })
   }
 
   return (
     <div>
+      {listError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+          <div className="font-semibold mb-0.5">Not saved</div>
+          {listError}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-5">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {(['active', 'inactive', 'all'] as const).map(f => (
