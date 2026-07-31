@@ -1,20 +1,44 @@
 'use client'
 
 import { useState, useOptimistic, useTransition } from 'react'
-import { Employee, Availability, TournamentSettings, getTournamentDates } from '@/lib/types'
-import { toggleAvailability, setAllAvailable } from './actions'
+import {
+  Employee, Availability, TournamentSettings, getTournamentDates,
+  patternAvailableOn, patternShiftsOn, SHIFT_PERIODS, weekdayIndex, DAY_LABELS,
+} from '@/lib/types'
+import { toggleAvailability, clearAvailabilityOverrides } from './actions'
 
-type AvailMap = Map<string, boolean>
+/** Explicit per-date overrides, keyed `${employeeId}:${date}`. */
+type OverrideMap = Map<string, boolean>
 
-function buildAvailMap(avails: Availability[]): AvailMap {
+function buildOverrides(avails: Availability[]): OverrideMap {
   const map = new Map<string, boolean>()
   avails.forEach(a => map.set(`${a.employee_id}:${a.date}`, a.available))
   return map
 }
 
-function isAvailable(map: AvailMap, employeeId: string, date: string): boolean {
-  const key = `${employeeId}:${date}`
-  return map.has(key) ? map.get(key)! : true // default = available
+/**
+ * A date is available if an explicit override says so, otherwise it falls back
+ * to the employee's standing weekly pattern. That fallback is the point of this
+ * screen: someone set to Mon–Fri is already marked off every weekend without
+ * anyone tapping a cell, so only genuine exceptions need touching.
+ */
+function isAvailable(overrides: OverrideMap, emp: Employee, date: string): boolean {
+  const key = `${emp.id}:${date}`
+  if (overrides.has(key)) return overrides.get(key)!
+  return patternAvailableOn(emp, date)
+}
+
+function isOverridden(overrides: OverrideMap, emp: Employee, date: string): boolean {
+  const key = `${emp.id}:${date}`
+  if (!overrides.has(key)) return false
+  return overrides.get(key)! !== patternAvailableOn(emp, date)
+}
+
+/** Short label for the shifts the pattern allows that day, e.g. "AM/PM". */
+function shiftHint(emp: Employee, date: string): string {
+  const on = patternShiftsOn(emp, date)
+  if (on.length === SHIFT_PERIODS.length) return ''
+  return SHIFT_PERIODS.filter(s => on.includes(s.id)).map(s => s.label).join('/')
 }
 
 export default function AvailabilityGrid({
@@ -34,9 +58,9 @@ export default function AvailabilityGrid({
     { label: 'Week 3', dates: week3 },
   ]
 
-  const [availMap, setOptimisticAvail] = useOptimistic(
-    buildAvailMap(availabilities),
-    (state: AvailMap, update: { key: string; value: boolean }) => {
+  const [overrides, setOptimisticOverride] = useOptimistic(
+    buildOverrides(availabilities),
+    (state: OverrideMap, update: { key: string; value: boolean }) => {
       const next = new Map(state)
       next.set(update.key, update.value)
       return next
@@ -48,25 +72,29 @@ export default function AvailabilityGrid({
 
   const currentDates = periods[activePeriod].dates
 
-  function handleToggle(employeeId: string, date: string) {
-    const current = isAvailable(availMap, employeeId, date)
+  function handleToggle(emp: Employee, date: string) {
+    const current = isAvailable(overrides, emp, date)
     startTransition(async () => {
-      setOptimisticAvail({ key: `${employeeId}:${date}`, value: !current })
-      await toggleAvailability(employeeId, date, current)
+      setOptimisticOverride({ key: `${emp.id}:${date}`, value: !current })
+      await toggleAvailability(emp.id, date, current)
     })
   }
 
-  function handleSetAll() {
-    const employeeIds = employees.map(e => e.id)
+  function handleResetPeriod() {
     startTransition(async () => {
-      await setAllAvailable(employeeIds, currentDates)
+      await clearAvailabilityOverrides(employees.map(e => e.id), currentDates)
     })
   }
+
+  const overrideCount = employees.reduce(
+    (n, emp) => n + currentDates.filter(d => isOverridden(overrides, emp, d)).length,
+    0
+  )
 
   return (
     <div>
       {/* Period tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-5 w-fit">
+      <div className="flex flex-wrap gap-1 bg-gray-100 rounded-lg p-1 mb-5 w-fit">
         {periods.map((p, i) => (
           <button
             key={i}
@@ -81,21 +109,33 @@ export default function AvailabilityGrid({
         ))}
       </div>
 
+      <div className="mb-4 px-4 py-3 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-800">
+        Days are filled in automatically from each employee&apos;s weekly pattern on the{' '}
+        <strong>Employees</strong> screen — someone set to Mon–Fri already shows as off every
+        weekend. Only tap a cell when a specific date differs from their usual pattern.
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
           <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded bg-emerald-200 border border-emerald-300 inline-block"></span>Available
+            <span className="w-4 h-4 rounded bg-emerald-100 border border-emerald-200 inline-block"></span>
+            Available
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded bg-red-100 border border-red-200 inline-block"></span>Unavailable
+            <span className="w-4 h-4 rounded bg-gray-100 border border-gray-200 inline-block"></span>
+            Off (from pattern)
           </span>
-          <span className="text-gray-400">(default = available)</span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-4 h-4 rounded bg-amber-100 border-2 border-amber-400 inline-block"></span>
+            Changed for this date
+          </span>
         </div>
         <button
-          onClick={handleSetAll}
-          className="text-sm text-gray-500 hover:text-gray-900 font-medium transition px-4 py-2.5 min-h-[44px] rounded-lg hover:bg-gray-100 active:bg-gray-200 shrink-0"
+          onClick={handleResetPeriod}
+          disabled={overrideCount === 0}
+          className="text-sm text-gray-500 hover:text-gray-900 font-medium transition px-4 py-2.5 min-h-[44px] rounded-lg hover:bg-gray-100 active:bg-gray-200 disabled:opacity-40 shrink-0"
         >
-          Set all available
+          Reset {overrideCount > 0 ? `${overrideCount} change${overrideCount === 1 ? '' : 's'}` : 'to pattern'}
         </button>
       </div>
 
@@ -103,12 +143,20 @@ export default function AvailabilityGrid({
         <table className="w-full min-w-max">
           <thead>
             <tr className="border-b border-gray-100">
-              <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2.5 w-36 sticky left-0 bg-white">Employee</th>
+              <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2.5 w-44 sticky left-0 bg-white">
+                Employee
+              </th>
               {currentDates.map(date => {
                 const d = new Date(date + 'T00:00:00')
+                const weekend = weekdayIndex(date) >= 5
                 return (
-                  <th key={date} className="text-center text-xs font-semibold text-gray-500 px-2 py-2.5 min-w-[60px]">
-                    <div>{d.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                  <th
+                    key={date}
+                    className={`text-center text-xs font-semibold px-2 py-2.5 min-w-[64px] ${
+                      weekend ? 'text-gray-400 bg-gray-50/60' : 'text-gray-500'
+                    }`}
+                  >
+                    <div>{DAY_LABELS[weekdayIndex(date)]}</div>
                     <div className="text-gray-400 font-normal">{d.getDate()}</div>
                   </th>
                 )
@@ -125,21 +173,29 @@ export default function AvailabilityGrid({
                   )}
                 </td>
                 {currentDates.map(date => {
-                  const avail = isAvailable(availMap, emp.id, date)
+                  const avail = isAvailable(overrides, emp, date)
+                  const changed = isOverridden(overrides, emp, date)
+                  const hint = avail ? shiftHint(emp, date) : ''
                   return (
                     <td key={date} className="px-1 py-1 text-center">
                       <button
-                        onClick={() => handleToggle(emp.id, date)}
-                        // 44px is Apple's minimum comfortable touch target; the
-                        // previous 32px was a reliable mis-tap on an iPad.
-                        className={`w-11 h-11 rounded-lg text-sm font-bold transition active:scale-95 ${
+                        onClick={() => handleToggle(emp, date)}
+                        className={`w-11 h-11 rounded-lg text-xs font-bold transition active:scale-95 ${
                           avail
-                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200'
-                            : 'bg-red-50 text-red-400 border border-red-100 hover:bg-red-100'
+                            ? changed
+                              ? 'bg-amber-100 text-amber-800 border-2 border-amber-400'
+                              : 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200'
+                            : changed
+                              ? 'bg-amber-50 text-amber-500 border-2 border-amber-400'
+                              : 'bg-gray-100 text-gray-300 border border-gray-200 hover:bg-gray-200'
                         }`}
-                        title={avail ? 'Tap to mark unavailable' : 'Tap to mark available'}
+                        title={
+                          changed
+                            ? 'Changed for this date — tap to flip back'
+                            : `From their weekly pattern — tap to change just this date`
+                        }
                       >
-                        {avail ? '✓' : '✗'}
+                        {avail ? (hint || '✓') : '✗'}
                       </button>
                     </td>
                   )
@@ -149,6 +205,10 @@ export default function AvailabilityGrid({
           </tbody>
         </table>
       </div>
+
+      {employees.length === 0 && (
+        <p className="text-sm text-gray-400 mt-4">No active employees yet.</p>
+      )}
     </div>
   )
 }

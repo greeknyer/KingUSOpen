@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
-  ShiftTemplate, shiftsForDay, canWork, canWorkLocation, isEligible, Position,
+  ShiftTemplate, shiftsForDay, canWork, canWorkLocation, canWorkShiftOn, Position,
 } from '@/lib/types'
 
 export async function autoSchedulePeriod(
@@ -58,9 +58,35 @@ export async function autoSchedulePeriod(
   const availMap = new Map<string, boolean>()
   avails?.forEach(a => availMap.set(`${a.employee_id}:${a.date}`, a.available))
 
-  function isAvail(empId: string, date: string): boolean {
+  /**
+    * Availability is tri-state. An explicit row is a deliberate exception the
+    * manager made on the Availability screen, so it beats the standing weekly
+    * pattern in both directions — marking someone on for a Saturday they
+    * normally never work has to actually schedule them, or the override would
+    * silently do nothing.
+    */
+  function availabilityFor(empId: string, date: string): 'on' | 'off' | 'default' {
     const key = `${empId}:${date}`
-    return availMap.has(key) ? availMap.get(key)! : true
+    if (!availMap.has(key)) return 'default'
+    return availMap.get(key)! ? 'on' : 'off'
+  }
+
+  function isAvail(empId: string, date: string): boolean {
+    return availabilityFor(empId, date) !== 'off'
+  }
+
+  /** Skill and location always apply; the weekly pattern yields to an override. */
+  function eligibleFor(
+    e: Employee,
+    position: Position,
+    location: Location,
+    slotOrder: number,
+    date: string
+  ): boolean {
+    if (!canWork(e, position)) return false
+    if (!canWorkLocation(e, location)) return false
+    if (availabilityFor(e.id, date) === 'on') return true
+    return canWorkShiftOn(e, date, location, slotOrder)
   }
 
   // Track hours assigned per employee (for fair distribution). Named apart from
@@ -204,7 +230,7 @@ export async function autoSchedulePeriod(
       const candidate = availableEmps.find(
         (e: Employee) =>
           unclaimed.has(e.id) &&
-          isEligible(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
+          eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
           underCap(e)
       )
       if (!candidate) continue
@@ -235,7 +261,7 @@ export async function autoSchedulePeriod(
 
       const eligible = availableEmps
         .filter((e: Employee) =>
-          isEligible(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
+          eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
           underCap(e)
         )
         .sort(sortByHours)

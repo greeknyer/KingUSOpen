@@ -251,6 +251,19 @@ export function canWorkShiftOn(
   return day.includes(shiftPeriodFor(location, slotOrder))
 }
 
+/** The shifts an employee's standing pattern allows on a date's weekday. */
+export function patternShiftsOn(employee: Employee, date: string): ShiftPeriod[] {
+  const pattern = employee.weekly_availability
+  const all = SHIFT_PERIODS.map(s => s.id)
+  if (!pattern) return all
+  return pattern[String(weekdayIndex(date))] ?? all
+}
+
+/** Whether the standing pattern has them working at all on this date. */
+export function patternAvailableOn(employee: Employee, date: string): boolean {
+  return patternShiftsOn(employee, date).length > 0
+}
+
 /** Every standing constraint at once: skill, location, and the weekly pattern. */
 export function isEligible(
   employee: Employee,
