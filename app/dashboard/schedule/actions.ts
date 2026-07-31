@@ -352,6 +352,9 @@ export async function autoSchedulePeriod(
         employee_id: emp.id,
         planned_start: slot.start,
         planned_end: slot.end,
+        // Written explicitly even though it's the default: PostgREST rejects a
+        // bulk insert whose objects don't all carry the same keys.
+        is_full_day: false,
         status: 'draft',
       })
       assignedToday.add(emp.id)
@@ -363,12 +366,40 @@ export async function autoSchedulePeriod(
     }
   }
 
+  // The count above is what we intended to write; only a clean insert makes it
+  // what was actually written. Reporting the intent regardless is how a failed
+  // insert previously came back as "138 assignments" with an empty grid.
   if (assignments.length > 0) {
-    await supabase.from('schedule_assignments').insert(assignments)
+    const { error } = await supabase.from('schedule_assignments').insert(assignments)
+    if (error) {
+      return {
+        count: 0,
+        unfilled: 0,
+        error:
+          error.code === '42703' || error.code === 'PGRST205'
+            ? `The database is missing a column this writes. Run the pending migrations in supabase/migrations, then try again. (${error.message})`
+            : error.message,
+      }
+    }
   }
 
   revalidatePath('/dashboard/schedule')
   return { count: assignments.length, unfilled }
+}
+
+export type SaveResult = { ok: true } | { ok: false; error: string }
+
+function toResult(error: { message: string; code?: string } | null): SaveResult {
+  if (!error) return { ok: true }
+  if (error.code === '42703' || error.code === 'PGRST205') {
+    return {
+      ok: false,
+      error:
+        'The database is missing a table or column this screen writes. Run the pending ' +
+        `migrations in supabase/migrations, then try again. (${error.message})`,
+    }
+  }
+  return { ok: false, error: error.message }
 }
 
 export async function saveAssignment(assignment: {
@@ -382,43 +413,56 @@ export async function saveAssignment(assignment: {
   planned_start: string | null
   planned_end: string | null
   status: string
-}) {
+}): Promise<SaveResult> {
   const supabase = await createClient()
-  if (assignment.id) {
-    await supabase.from('schedule_assignments').update({
-      employee_id: assignment.employee_id,
-      planned_start: assignment.planned_start,
-      planned_end: assignment.planned_end,
-    }).eq('id', assignment.id)
-  } else {
-    const { id: _, ...rest } = assignment
-    await supabase.from('schedule_assignments').insert(rest)
-  }
+  const { error } = assignment.id
+    ? await supabase.from('schedule_assignments').update({
+        employee_id: assignment.employee_id,
+        planned_start: assignment.planned_start,
+        planned_end: assignment.planned_end,
+      }).eq('id', assignment.id)
+    : await (async () => {
+        const { id: _id, ...rest } = assignment
+        return supabase.from('schedule_assignments').insert(rest)
+      })()
+
+  if (error) return toResult(error)
   revalidatePath('/dashboard/schedule')
+  revalidatePath('/dashboard/timetracking')
+  return { ok: true }
 }
 
-export async function removeAssignment(id: string) {
+export async function removeAssignment(id: string): Promise<SaveResult> {
   const supabase = await createClient()
-  await supabase.from('schedule_assignments').delete().eq('id', id)
+  const { error } = await supabase.from('schedule_assignments').delete().eq('id', id)
+  if (error) return toResult(error)
   revalidatePath('/dashboard/schedule')
+  revalidatePath('/dashboard/timetracking')
+  return { ok: true }
 }
 
-export async function publishPeriod(dates: string[]) {
+export async function publishPeriod(dates: string[]): Promise<SaveResult> {
   const supabase = await createClient()
-  await supabase
+  const { error } = await supabase
     .from('schedule_assignments')
     .update({ status: 'published' })
     .in('date', dates)
     .eq('status', 'draft')
+  if (error) return toResult(error)
   revalidatePath('/dashboard/schedule')
+  revalidatePath('/dashboard/timetracking')
+  return { ok: true }
 }
 
-export async function clearDraftPeriod(dates: string[]) {
+export async function clearDraftPeriod(dates: string[]): Promise<SaveResult> {
   const supabase = await createClient()
-  await supabase
+  const { error } = await supabase
     .from('schedule_assignments')
     .delete()
     .in('date', dates)
     .eq('status', 'draft')
+  if (error) return toResult(error)
   revalidatePath('/dashboard/schedule')
+  revalidatePath('/dashboard/timetracking')
+  return { ok: true }
 }

@@ -37,13 +37,14 @@ function AssignmentModal({
   onClose: () => void
 }) {
   const [pending, startTransition] = useTransition()
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [empId, setEmpId] = useState(existing?.employee_id ?? '')
   const [start, setStart] = useState(existing?.planned_start?.slice(0, 5) ?? '')
   const [end, setEnd] = useState(existing?.planned_end?.slice(0, 5) ?? '')
 
   function handleSave() {
     startTransition(async () => {
-      await saveAssignment({
+      const r = await saveAssignment({
         id: existing?.id,
         year,
         date,
@@ -55,15 +56,18 @@ function AssignmentModal({
         planned_end: end || null,
         status: 'draft',
       })
-      onClose()
+      // Stay open on failure rather than closing over a change that didn't save.
+      if (r.ok) onClose()
+      else setSaveError(r.error)
     })
   }
 
   function handleRemove() {
     if (!existing) return
     startTransition(async () => {
-      await removeAssignment(existing.id)
-      onClose()
+      const r = await removeAssignment(existing.id)
+      if (r.ok) onClose()
+      else setSaveError(r.error)
     })
   }
 
@@ -88,6 +92,13 @@ function AssignmentModal({
             ×
           </button>
         </div>
+
+        {saveError && (
+          <div className="mb-3 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+            <div className="font-semibold mb-0.5">Not saved</div>
+            {saveError}
+          </div>
+        )}
 
         <div className="space-y-3">
           <div>
@@ -327,7 +338,12 @@ export default function ScheduleClient({
     const reg4Dates = [...reg4ActiveSet].filter(d => currentDates.includes(d))
     startTransition(async () => {
       try {
-        const { count, unfilled } = await autoSchedulePeriod(currentDates, year, reg4Dates)
+        const result = await autoSchedulePeriod(currentDates, year, reg4Dates)
+        if ('error' in result && result.error) {
+          setMessage(`Nothing was saved — ${result.error}`)
+          return
+        }
+        const { count, unfilled } = result
         setMessage(
           unfilled > 0
             ? `Generated ${count} assignments as draft. ${unfilled} slot${unfilled === 1 ? '' : 's'} left empty — not enough available staff to cover every shift.`
@@ -342,15 +358,16 @@ export default function ScheduleClient({
   function handlePublish() {
     setMessage('')
     startTransition(async () => {
-      await publishPeriod(currentDates)
-      setMessage('Published!')
+      const r = await publishPeriod(currentDates)
+      setMessage(r.ok ? 'Published!' : `Nothing was published — ${r.error}`)
     })
   }
 
   function handleClearDraft() {
     if (!confirm('Clear all draft entries for this period?')) return
     startTransition(async () => {
-      await clearDraftPeriod(currentDates)
+      const r = await clearDraftPeriod(currentDates)
+      if (!r.ok) { setMessage(`Nothing was cleared — ${r.error}`); return }
       setMessage('Draft cleared.')
     })
   }
