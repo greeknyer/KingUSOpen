@@ -4,14 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
-  OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
-  ShiftTemplate, shiftsForDay, canWork, canWorkOn, canWorkLocation, Position,
+  OperatingHours, Location, buildHoursMap, getHoursForDate,
+  ShiftTemplate, shiftsForDay, canWorkOn, canWorkLocation, Position,
   sectionForPosition, OptionalPositionConfig, buildPeriodShiftMap,
   positionRunsSlotInPeriod, positionOpenInPeriod, getPeriodAndDayIndex,
   Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor, positionRunsSlot,
-  ShiftPeriod,
 } from '@/lib/types'
-import { SHIFT_PRIORITY, pickBest, meanLength } from '@/lib/scheduling'
+import { SHIFT_PRIORITY, fillDay, DaySlot } from '@/lib/scheduling'
 
 export async function autoSchedulePeriod(
   dates: string[],
@@ -103,19 +102,6 @@ export async function autoSchedulePeriod(
     return e ? shiftsAvailable(e, date).length > 0 : false
   }
 
-  /** Skill and location are standing facts; the shift comes from the date. */
-  function eligibleFor(
-    e: Employee,
-    position: Position,
-    location: Location,
-    slotOrder: number,
-    date: string
-  ): boolean {
-    if (!canWorkOn(e, position, availMap.get(`${e.id}:${date}`))) return false
-    if (!canWorkLocation(e, location)) return false
-    return shiftsAvailable(e, date).includes(shiftPeriodFor(location, slotOrder))
-  }
-
   // Track hours assigned per employee (for fair distribution). Named apart from
   // the operating-hours map above, which is a different thing entirely.
   const hoursTally = new Map<string, number>(employees.map((e: Employee) => [e.id, 0]))
@@ -168,15 +154,7 @@ export async function autoSchedulePeriod(
     // position. Ordering by shift matters when staff is tight: it covers every
     // position's opening shift before staffing anyone's handoff, rather than
     // fully staffing a few positions and leaving others dark all day.
-    type Slot = {
-      location: Location
-      position: string
-      isChef: boolean
-      slotOrder: number
-      start: string
-      end: string | null
-    }
-    const slots: Slot[] = []
+    const slots: DaySlot[] = []
 
     // Built in operational priority — see SHIFT_PRIORITY. Slots are filled in
     // this same order, so a short day loses mids rather than leaving a position
@@ -216,55 +194,10 @@ export async function autoSchedulePeriod(
       }
     }
 
-    // One shift per employee per day — a handoff needs a second person.
-    const assignedToday = new Set<string>()
-
-    // Positions held open-to-close by one person, so their later shifts need
-    // nobody. Keyed `${location}:${position}`.
-    const coveredPositions = new Set<string>()
-
-    /** Give someone a position for the whole of that location's opening hours. */
-    function assignFullDay(e: Employee, location: Location, position: string, fallback: string) {
-      const h = getHoursForDate(hoursMap, location, date, settings!)
-      assignments.push({
-        year,
-        date,
-        location,
-        position,
-        slot_order: 1,
-        employee_id: e.id,
-        planned_start: h?.open_time ?? fallback,
-        planned_end: h?.close_time ?? null,
-        is_full_day: true,
-        status: 'draft',
-      })
-      assignedToday.add(e.id)
-      recordShift(e.id)
-      coveredPositions.add(`${location}:${position}`)
-      hoursTally.set(
-        e.id,
-        (hoursTally.get(e.id) ?? 0) +
-          shiftLengthHours(h?.open_time ?? null, h?.close_time ?? null)
-      )
-    }
-
-    // Pin the Stadium manager first — they're fixed at the Stadium for the
-    // tournament and float between Register and Prep.
-    if (
-      stadiumManager &&
-      stadiumShifts.length > 0 &&
-      isAvail(stadiumManager.id, date) &&
-      canWorkLocation(stadiumManager, 'stadium')
-    ) {
-      const pos =
-        STADIUM_POSITIONS.find(p => canWork(stadiumManager, p.id)) ?? STADIUM_POSITIONS[0]
-      assignFullDay(stadiumManager, 'stadium', pos.id, stadiumShifts[0].start)
-    }
-
-    // Then anyone who works full days. They take a position outright, which is
-    // why they're placed before the shift rotation — every position they hold
-    // is one fewer that needs three people cycling through it.
-    const fullDayCandidates: { location: Location; position: string }[] = [
+    // Everything above worked out WHAT the day needs. Who fills it is decided
+    // by fillDay, which is pure and lives in lib/scheduling.ts so the fairness
+    // rules can be measured directly instead of only through this action.
+    const fullDayCandidates = [
       ...(fvShifts.length > 0
         ? fvPositions.map(p => ({ location: 'food_village' as Location, position: p.id }))
         : []),
@@ -273,151 +206,46 @@ export async function autoSchedulePeriod(
         : []),
     ]
 
-    /**
-     * Whether someone is free for every shift a location runs that day.
-     *
-     * Working full days is a standing arrangement, but availability is per day:
-     * someone on full days at weekends may only be free for the PM shift midweek.
-     * Handing them open-to-close then both schedules them outside their hours and
-     * locks up the whole position — with only three prep positions, three full-day
-     * preppers is the entire prep crew for the day. They take a normal shift on
-     * those days instead, leaving the position's other shifts for someone else.
-     */
-    function freeAllDay(e: Employee, location: Location): boolean {
-      const dayShifts = location === 'food_village' ? fvShifts : stadiumShifts
-      if (dayShifts.length === 0) return false
-      const avail = shiftsAvailable(e, date)
-      return dayShifts.every(s => avail.includes(shiftPeriodFor(location, s.slot_order)))
-    }
+    const { placements, unfilled: dayUnfilled } = fillDay({
+      staff: availableEmps,
+      slots,
+      fullDayCandidates,
+      locationShifts: (loc: Location) => (loc === 'food_village' ? fvShifts : stadiumShifts),
+      fullDayWindow: (loc: Location) => {
+        const h = getHoursForDate(hoursMap, loc, date, settings!)
+        const first = loc === 'food_village' ? fvShifts[0] : stadiumShifts[0]
+        return { start: h?.open_time ?? first?.start ?? '00:00', end: h?.close_time ?? null }
+      },
+      availableShifts: (e: Employee) => shiftsAvailable(e, date),
+      worksFullDay: (e: Employee) => isFullDay(e, date),
+      canPosition: (e: Employee, position: Position) =>
+        canWorkOn(e, position, availMap.get(`${e.id}:${date}`)),
+      canLocation: canWorkLocation,
+      underCap,
+      hoursSoFar: (e: Employee) => hoursTally.get(e.id) ?? 0,
+      stadiumManager:
+        stadiumManager && isAvail(stadiumManager.id, date) ? stadiumManager : undefined,
+    })
 
-    const fullDayStaff = availableEmps
-      .filter((e: Employee) => isFullDay(e, date) && !assignedToday.has(e.id) && underCap(e))
-      .sort((a: Employee, b: Employee) =>
-        (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
-      )
+    unfilled += dayUnfilled
 
-    for (const e of fullDayStaff) {
-      const target = fullDayCandidates.find(
-        c =>
-          !coveredPositions.has(`${c.location}:${c.position}`) &&
-          canWorkOn(e, c.position as Position, availMap.get(`${e.id}:${date}`)) &&
-          canWorkLocation(e, c.location) &&
-          freeAllDay(e, c.location)
-      )
-      // No free position they can work — they fall through to the normal
-      // rotation below rather than being left off the day entirely.
-      if (!target) continue
-      const first = target.location === 'food_village' ? fvShifts[0] : stadiumShifts[0]
-      assignFullDay(e, target.location, target.position, first.start)
-    }
-
-    /**
-     * How many of the day's shifts this person could take at a location.
-     *
-     * Someone available only for PM has exactly one way to be used. If a fully
-     * flexible colleague takes that PM slot first, the PM-only person cannot be
-     * placed at all and the shift they could have covered goes empty — which is
-     * how a PM-only prepper ends up missing from a day while AM sits unfilled.
-     * Preferring the most constrained person for each slot keeps the flexible
-     * ones free for the slots only they can still fill.
-     */
-    function shiftOptions(e: Employee, location: Location): number {
-      const dayShifts = location === 'food_village' ? fvShifts : stadiumShifts
-      const avail = shiftsAvailable(e, date)
-      return dayShifts.filter(s => avail.includes(shiftPeriodFor(location, s.slot_order))).length
-    }
-
-    /** Mean shift length that day, so the picker can tell long from short. */
-    function meanFor(location: Location) {
-      const dayShifts = location === 'food_village' ? fvShifts : stadiumShifts
-      return meanLength(dayShifts.map(s => shiftLengthHours(s.start, s.end)))
-    }
-
-    function pickOrder(location: Location, slotLength: number) {
-      return pickBest({
-        shiftOptions: (e: Employee) => shiftOptions(e, location),
-        hours: (e: Employee) => hoursTally.get(e.id) ?? 0,
-        slotLength,
-        meanShiftLength: meanFor(location),
-      })
-    }
-
-    // Coverage decides WHICH slots get staffed; fairness decides WHO fills
-    // them. Both passes are needed because the two goals pull apart.
-    //
-    // Pass 1 walks the slots in coverage order — every position's opening
-    // shift before anyone's handoff — consuming one eligible person per slot
-    // to work out how many are actually staffable today.
-    const openSlots = slots.filter(
-      s => !coveredPositions.has(`${s.location}:${s.position}`)
-    )
-    const unclaimed = new Set(
-      availableEmps.filter((e: Employee) => !assignedToday.has(e.id)).map((e: Employee) => e.id)
-    )
-    const staffable: typeof openSlots = []
-    for (const slot of openSlots) {
-      const candidate = [...availableEmps]
-        .sort(pickOrder(slot.location, shiftLengthHours(slot.start, slot.end)))
-        .find(
-          (e: Employee) =>
-            unclaimed.has(e.id) &&
-            eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
-            underCap(e)
-        )
-      if (!candidate) continue
-      unclaimed.delete(candidate.id)
-      staffable.push(slot)
-    }
-
-    // Slots pass 1 could not staff at all — nobody eligible left, or everyone
-    // who was is already at their weekly cap.
-    unfilled += openSlots.length - staffable.length
-
-    // Pass 2 fills them in the same operational priority pass 1 used, so opens
-    // and closes are staffed before mids and the two passes agree on order.
-    // Balance is handled by the picker instead: a longer-than-average shift
-    // goes to whoever has worked least and a shorter one to whoever has worked
-    // most, which rotates people through shift types rather than pinning them.
-    for (const slot of staffable) {
-
-      // Fewest hours so far goes next. Only people qualified for the position
-      // are eligible; Chef prefers a manager among those who can actually cook.
-      const eligible = availableEmps
-        .filter((e: Employee) =>
-          eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
-          underCap(e)
-        )
-        .sort(pickOrder(slot.location, shiftLengthHours(slot.start, slot.end)))
-      const pool = slot.isChef
-        ? [...eligible.filter(e => e.is_manager), ...eligible.filter(e => !e.is_manager)]
-        : [...eligible.filter(e => !e.is_manager), ...eligible.filter(e => e.is_manager)]
-
-      const emp = pool.find(e => !assignedToday.has(e.id))
-      if (!emp) {
-        unfilled++
-        continue
-      }
-
+    for (const p of placements) {
       assignments.push({
         year,
         date,
-        location: slot.location,
-        position: slot.position,
-        slot_order: slot.slotOrder,
-        employee_id: emp.id,
-        planned_start: slot.start,
-        planned_end: slot.end,
-        // Written explicitly even though it's the default: PostgREST rejects a
-        // bulk insert whose objects don't all carry the same keys.
-        is_full_day: false,
+        location: p.location,
+        position: p.position,
+        slot_order: p.slotOrder,
+        employee_id: p.employee.id,
+        planned_start: p.start,
+        planned_end: p.end,
+        // Written explicitly even though it has a default: PostgREST rejects a
+        // bulk insert whose objects do not all carry the same keys.
+        is_full_day: p.isFullDay,
         status: 'draft',
       })
-      assignedToday.add(emp.id)
-      recordShift(emp.id)
-      hoursTally.set(
-        emp.id,
-        (hoursTally.get(emp.id) ?? 0) + shiftLengthHours(slot.start, slot.end)
-      )
+      recordShift(p.employee.id)
+      hoursTally.set(p.employee.id, (hoursTally.get(p.employee.id) ?? 0) + p.hours)
     }
   }
 

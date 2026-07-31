@@ -13,6 +13,9 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    // scripts/ runs under `node --experimental-strip-types`, whose resolver
+    // needs the explicit .ts the bundler never asks for.
+    "allowImportingTsExtensions": true,
     "plugins": [
       {
         "name": "next"
