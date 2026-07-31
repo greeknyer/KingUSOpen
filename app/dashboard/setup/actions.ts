@@ -81,9 +81,9 @@ export async function saveOperatingHours(
   return { ok: true }
 }
 
-export async function saveRegister4Config(
+export async function saveOptionalPositions(
   year: number,
-  configs: { period: number; is_active: boolean }[]
+  configs: { period: number; position: string; is_active: boolean }[]
 ): Promise<SaveResult> {
   const supabase = await createClient()
 

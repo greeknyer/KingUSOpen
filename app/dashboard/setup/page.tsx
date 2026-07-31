@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import SetupClient from './setup-client'
-import { TournamentSettings, OperatingHours, Register4Config, ShiftTemplate, Employee } from '@/lib/types'
+import { TournamentSettings, OperatingHours, OptionalPositionConfig, ShiftTemplate, Employee } from '@/lib/types'
 
 export default async function SetupPage() {
   const supabase = await createClient()
@@ -23,7 +23,7 @@ export default async function SetupPage() {
   const hours: OperatingHours[] = (hoursRows ?? []).filter(
     r => !settings || r.year === settings.year
   )
-  const register4: Register4Config[] = (reg4Rows ?? []).filter(
+  const register4: OptionalPositionConfig[] = (reg4Rows ?? []).filter(
     r => !settings || r.year === settings.year
   )
   const shiftTemplates: ShiftTemplate[] = (templateRows ?? []).filter(

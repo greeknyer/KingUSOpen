@@ -19,7 +19,10 @@ one is harmless.
 | `005_availability_shifts` | shift-level availability overrides |
 | `006_full_day_staff` | staff who work open to close |
 | `007_availability_full_day` | full days as a per-date override |
-| `008_retire_prep_4` | drops the fourth prep position |
+| `008_retire_prep_4` | removed Prep 4 — reinstated by 011, run it anyway to stay in order |
+| `009_assignment_full_day` | marks assignments that hold a position all day |
+| `010_availability_positions` | per-date restriction on which positions someone covers |
+| `011_prep4_config` | Prep 4 back, switchable per period like Register 4 |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -98,8 +101,8 @@ hours.
 
 ### Positions
 
-**Food Village (9)** — Register 1–4, Prep 1–3, Chef, Salads. Register 4 is
-switchable per period.
+**Food Village (10)** — Register 1–4, Prep 1–4, Chef, Salads. Register 4 and
+Prep 4 are switchable per period, so they only run the weeks you turn them on.
 **Stadium (2)** — Register, Prep.
 
 Each position requires a matching skill, so Auto-Schedule only places people

@@ -2,12 +2,13 @@
 
 import { useState, useTransition } from 'react'
 import {
-  TournamentSettings, OperatingHours, Register4Config, Location, ShiftTemplate, Employee,
+  TournamentSettings, OperatingHours, OptionalPositionConfig, Location, ShiftTemplate, Employee,
   DEFAULT_HOURS, DEFAULT_SHIFT_TEMPLATES, HANDOFF_MIN_HOURS, formatTime, hoursKey,
+  OPTIONAL_POSITIONS,
   shiftsForDay, shiftLabel,
 } from '@/lib/types'
 import {
-  saveTournamentSettings, saveOperatingHours, saveRegister4Config, saveShiftTemplates,
+  saveTournamentSettings, saveOperatingHours, saveOptionalPositions, saveShiftTemplates,
 } from './actions'
 
 const PERIODS = [
@@ -44,15 +45,6 @@ function defaultDayHours(location: Location, period: number, dayIndex: number): 
   }
 }
 
-function buildDefaultRegister4(): { period: number; is_active: boolean }[] {
-  return [
-    { period: 0, is_active: true },  // Pre-tournament: active
-    { period: 1, is_active: false }, // Week 1: inactive
-    { period: 2, is_active: true },  // Week 2: active
-    { period: 3, is_active: false }, // Week 3: inactive
-  ]
-}
-
 export default function SetupClient({
   settings,
   hours,
@@ -62,7 +54,7 @@ export default function SetupClient({
 }: {
   settings: TournamentSettings | null
   hours: OperatingHours[]
-  register4: Register4Config[]
+  register4: OptionalPositionConfig[]
   shiftTemplates: ShiftTemplate[]
   employees: Employee[]
 }) {
@@ -207,21 +199,26 @@ export default function SetupClient({
   )
 
   // Register 4 state
-  const initReg4 = () => {
-    const map = new Map<number, boolean>()
-    if (register4.length > 0) {
-      register4.forEach(r => map.set(r.period, r.is_active))
-    } else {
-      buildDefaultRegister4().forEach(r => map.set(r.period, r.is_active))
-    }
+  // Keyed `${position}:${period}`. Anything unsaved stays off, so a position is
+  // never scheduled before someone has said it runs.
+  const initOptional = () => {
+    const map = new Map<string, boolean>()
+    register4.forEach(r =>
+      map.set(`${r.position ?? 'register_4'}:${r.period}`, r.is_active)
+    )
     return map
   }
-  const [reg4Active, setReg4Active] = useState<Map<number, boolean>>(initReg4)
+  const [optionalActive, setOptionalActive] = useState<Map<string, boolean>>(initOptional)
 
-  function toggleReg4(period: number) {
-    setReg4Active(prev => {
+  function optionalOn(position: string, period: number): boolean {
+    return optionalActive.get(`${position}:${period}`) ?? false
+  }
+
+  function toggleOptional(position: string, period: number) {
+    setOptionalActive(prev => {
       const next = new Map(prev)
-      next.set(period, !next.get(period))
+      const key = `${position}:${period}`
+      next.set(key, !(next.get(key) ?? false))
       return next
     })
   }
@@ -295,15 +292,15 @@ export default function SetupClient({
     })
   }
 
-  async function handleSaveReg4() {
+  async function handleSaveOptional() {
     setMessage(''); setError('')
-    const configs: { period: number; is_active: boolean }[] = []
-    reg4Active.forEach((is_active, period) => {
-      configs.push({ period, is_active })
-    })
+    const configs: { period: number; position: string; is_active: boolean }[] = []
+    for (const pos of OPTIONAL_POSITIONS)
+      for (const p of PERIODS)
+        configs.push({ period: p.id, position: pos.id, is_active: optionalOn(pos.id, p.id) })
     startTransition(async () => {
-      const r = await saveRegister4Config(year, configs)
-      if (r.ok) setMessage('Food Village Register 4 config saved!')
+      const r = await saveOptionalPositions(year, configs)
+      if (r.ok) setMessage('Optional positions saved!')
       else setError(r.error)
     })
   }
@@ -696,39 +693,51 @@ export default function SetupClient({
         </p>
       </div>
 
-      {/* Register 4 Config */}
+      {/* Optional positions */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
           <div>
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Food Village Register 4 Active</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Enable/disable the Food Village’s fourth register per period</p>
+            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Optional Positions</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Positions that only run some weeks. Anything left off is never scheduled and
+              never counted as an unfilled slot.
+            </p>
           </div>
           <button
-            onClick={handleSaveReg4}
+            onClick={handleSaveOptional}
             disabled={pending}
-            className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition"
+            className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition shrink-0"
           >
-            {pending ? 'Saving…' : 'Save Register 4'}
+            {pending ? 'Saving…' : 'Save Optional Positions'}
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          {PERIODS.map(p => {
-            const isActive = reg4Active.get(p.id) ?? false
-            return (
-              <button
-                key={p.id}
-                onClick={() => toggleReg4(p.id)}
-                className={`px-4 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold border transition active:scale-95 ${
-                  isActive
-                    ? 'bg-blue-100 text-blue-800 border-blue-200'
-                    : 'bg-gray-100 text-gray-400 border-gray-200'
-                }`}
-              >
-                {p.label} {isActive ? '✓ Active' : '✗ Inactive'}
-              </button>
-            )
-          })}
+        <div className="space-y-5">
+          {OPTIONAL_POSITIONS.map(pos => (
+            <div key={pos.id}>
+              <div className="text-sm font-bold text-gray-900 mb-2">
+                Food Village {pos.label}
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {PERIODS.map(p => {
+                  const isActive = optionalOn(pos.id, p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => toggleOptional(pos.id, p.id)}
+                      className={`px-4 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold border transition active:scale-95 ${
+                        isActive
+                          ? 'bg-blue-100 text-blue-800 border-blue-200'
+                          : 'bg-gray-100 text-gray-400 border-gray-200'
+                      }`}
+                    >
+                      {p.label} {isActive ? '✓ Active' : '✗ Inactive'}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

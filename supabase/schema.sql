@@ -32,13 +32,15 @@ CREATE TABLE IF NOT EXISTS operating_hours (
   UNIQUE (year, location, period, day_index)
 );
 
--- Register 4 active state per period
+-- Optional positions, switched on or off per period. Register 4 and Prep 4 both
+-- run some weeks and not others.
 CREATE TABLE IF NOT EXISTS register4_config (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   year int NOT NULL,
   period int NOT NULL CHECK (period IN (0, 1, 2, 3)),
+  position text NOT NULL DEFAULT 'register_4',
   is_active boolean NOT NULL DEFAULT false,
-  UNIQUE (year, period)
+  UNIQUE (year, period, position)
 );
 
 -- Shift templates. The Food Village runs three overlapping shifts every open

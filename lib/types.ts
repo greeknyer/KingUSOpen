@@ -137,10 +137,12 @@ export const SLOTS_PER_LOCATION: Record<Location, number> = {
   stadium: 2,
 }
 
-export interface Register4Config {
+/** A position that runs some periods and not others. */
+export interface OptionalPositionConfig {
   id: string
   year: number
   period: number   // 0=pre, 1=week1, 2=week2, 3=week3
+  position: Position
   is_active: boolean
 }
 
@@ -160,9 +162,6 @@ export interface Availability {
 
 export type Position =
   | 'register_1' | 'register_2' | 'register_3' | 'register_4'
-  // prep_4 is retired — the Food Village runs three prep positions. Kept in
-  // the union and in POSITION_SKILL so any assignment written before the
-  // change still resolves rather than throwing.
   | 'prep_1' | 'prep_2' | 'prep_3' | 'prep_4'
   | 'chef' | 'salads'
   | 'stadium_register' | 'stadium_prep'
@@ -212,9 +211,12 @@ export const FOOD_VILLAGE_POSITIONS: PositionMeta[] = [
   { id: 'register_2', label: 'Register 2', section: 'Registers' },
   { id: 'register_3', label: 'Register 3', section: 'Registers' },
   { id: 'register_4', label: 'Register 4', section: 'Registers', configurable: true },
-  { id: 'prep_1', label: 'Prep 1', section: 'Prep' },
-  { id: 'prep_2', label: 'Prep 2', section: 'Prep' },
-  { id: 'prep_3', label: 'Prep 3', section: 'Prep' },
+  // Prep runs open and close only, no mid: an AM prepper hands to a PM one.
+  { id: 'prep_1', label: 'Prep 1', section: 'Prep', shifts: ['am', 'pm'] },
+  { id: 'prep_2', label: 'Prep 2', section: 'Prep', shifts: ['am', 'pm'] },
+  { id: 'prep_3', label: 'Prep 3', section: 'Prep', shifts: ['am', 'pm'] },
+  // Off for Week 1, on later — switched per period like Register 4.
+  { id: 'prep_4', label: 'Prep 4', section: 'Prep', shifts: ['am', 'pm'], configurable: true },
   // The kitchen runs no mid shift — both its positions are open and close only.
   { id: 'chef', label: 'Chef', section: 'Kitchen', shifts: ['am', 'pm'] },
   { id: 'salads', label: 'Salads', section: 'Kitchen', shifts: ['am', 'pm'] },
@@ -226,6 +228,9 @@ export const STADIUM_POSITIONS: PositionMeta[] = [
 ]
 
 const ALL_POSITIONS: PositionMeta[] = [...FOOD_VILLAGE_POSITIONS, ...STADIUM_POSITIONS]
+
+/** Positions switched on and off per period in Tournament Setup. */
+export const OPTIONAL_POSITIONS: PositionMeta[] = ALL_POSITIONS.filter(p => p.configurable)
 
 /** Which shifts a position runs. Defaults to every shift its location has. */
 export function positionShifts(position: Position): ShiftPeriod[] {

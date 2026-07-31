@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import {
-  Employee, ScheduleAssignment, TournamentSettings, OperatingHours, Register4Config,
+  Employee, ScheduleAssignment, TournamentSettings, OperatingHours, OptionalPositionConfig,
   FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position,
   Location, buildHoursMap, getHoursForDate, formatHoursRange,
   ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel, positionRunsSlot,
@@ -223,7 +223,7 @@ export default function ScheduleClient({
   assignments: ScheduleAssignment[]
   settings: TournamentSettings
   operatingHours: OperatingHours[]
-  register4Configs: Register4Config[]
+  register4Configs: OptionalPositionConfig[]
   shiftTemplates: ShiftTemplate[]
 }) {
   const [activePeriod, setActivePeriod] = useState(1) // Default to week 1
@@ -285,13 +285,21 @@ export default function ScheduleClient({
     return dayShifts(location, date).some(s => s.slot_order === slotOrder)
   }
 
-  const reg4ActiveSet = new Set<string>()
+  // Dates each optional position runs, keyed by position id.
+  const optionalActiveDates = new Map<string, Set<string>>()
   register4Configs.forEach(r => {
-    if (r.year === year && r.is_active) {
-      const dates = periodDates[r.period]
-      if (dates) dates.forEach(d => reg4ActiveSet.add(d))
-    }
+    if (r.year !== year || !r.is_active) return
+    const dates = periodDates[r.period]
+    if (!dates) return
+    // Rows written before Prep 4 existed carry no position; they're Register 4.
+    const key = r.position ?? 'register_4'
+    if (!optionalActiveDates.has(key)) optionalActiveDates.set(key, new Set())
+    dates.forEach(d => optionalActiveDates.get(key)!.add(d))
   })
+
+  function positionActive(position: string, date: string): boolean {
+    return optionalActiveDates.get(position)?.has(date) ?? false
+  }
 
   function getAssignments(date: string, location: string, position: string): ScheduleAssignment[] {
     return initialAssignments.filter(a =>
@@ -313,7 +321,7 @@ export default function ScheduleClient({
     for (const date of currentDates) {
       if (!isLocationOpen(location, date)) continue
       for (const pos of positions) {
-        if (pos.id === 'register_4' && !reg4ActiveSet.has(date)) continue
+        if (pos.configurable && !positionActive(pos.id, date)) continue
         const holder = fullDayHolder(location, date, pos.id)
         for (const slotOrder of slotNums) {
           if (!positionRunsSlot(location, pos.id, slotOrder)) continue
@@ -336,10 +344,12 @@ export default function ScheduleClient({
     setMessage('')
     // Open days and shift times now come from the hours saved in Tournament
     // Setup, which autoSchedulePeriod reads directly.
-    const reg4Dates = [...reg4ActiveSet].filter(d => currentDates.includes(d))
+    const activeDates: Record<string, string[]> = {}
+    for (const [position, dates] of optionalActiveDates)
+      activeDates[position] = currentDates.filter(d => dates.has(d))
     startTransition(async () => {
       try {
-        const result = await autoSchedulePeriod(currentDates, year, reg4Dates)
+        const result = await autoSchedulePeriod(currentDates, year, activeDates)
         if ('error' in result && result.error) {
           setMessage(`Nothing was saved — ${result.error}`)
           return
@@ -473,7 +483,7 @@ export default function ScheduleClient({
             </thead>
             <tbody>
               {FOOD_VILLAGE_POSITIONS.map(pos => {
-                const isReg4 = pos.id === 'register_4'
+                const isOptional = !!pos.configurable
                 // A position only shows rows for the shifts it actually runs.
                 const posSlots = FV_SLOTS.filter(n => positionRunsSlot('food_village', pos.id, n))
                 return posSlots.map((slotOrder, slotIdx) => {
@@ -483,7 +493,7 @@ export default function ScheduleClient({
                       {isFirstSlot && (
                         <td rowSpan={posSlots.length} className="px-4 py-1 align-middle sticky left-0 bg-white">
                           <div className="text-xs font-semibold text-gray-700">{pos.label}</div>
-                          {isReg4 && <div className="text-[10px] text-gray-400">configurable</div>}
+                          {isOptional && <div className="text-[10px] text-gray-400">optional</div>}
                         </td>
                       )}
                       <td className="px-2 py-1">
@@ -491,7 +501,7 @@ export default function ScheduleClient({
                       </td>
                       {currentDates.map(date => {
                         // Check if register 4 is active for this date
-                        if (isReg4 && !reg4ActiveSet.has(date)) {
+                        if (isOptional && !positionActive(pos.id, date)) {
                           return isFirstSlot ? (
                             <td key={date} rowSpan={posSlots.length} className="px-1 py-1 align-middle">
                               <div className="min-h-[140px] rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">

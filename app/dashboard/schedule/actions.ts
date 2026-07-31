@@ -14,7 +14,8 @@ import { SHIFT_PRIORITY, pickBest, meanLength } from '@/lib/scheduling'
 export async function autoSchedulePeriod(
   dates: string[],
   year: number,
-  register4ActiveDates: string[]
+  /** Dates each optional position runs, keyed by position id. */
+  activeDates: Record<string, string[]>
 ) {
   const supabase = await createClient()
 
@@ -136,10 +137,10 @@ export async function autoSchedulePeriod(
       (e: Employee) => isAvail(e.id, date) && e.id !== gmId && e.id !== stadiumManagerId
     )
 
-    const fvPositions = FOOD_VILLAGE_POSITIONS.filter(p => {
-      if (p.id === 'register_4') return register4ActiveDates.includes(date)
-      return true
-    })
+    // Optional positions only run on the days they're switched on for.
+    const fvPositions = FOOD_VILLAGE_POSITIONS.filter(p =>
+      p.configurable ? (activeDates[p.id] ?? []).includes(date) : true
+    )
 
     const fvShifts = shiftsFor('food_village', date)
     const stadiumShifts = shiftsFor('stadium', date)
