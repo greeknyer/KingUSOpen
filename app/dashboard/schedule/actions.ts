@@ -184,10 +184,36 @@ export async function autoSchedulePeriod(
     // One shift per employee per day — a handoff needs a second person.
     const assignedToday = new Set<string>()
 
-    // Pin the Stadium manager first. They float between Register and Prep and
-    // work open to close rather than a split shift, so their position's later
-    // slots need no one — recorded here and skipped below.
-    const managerCovers = new Set<string>()
+    // Positions held open-to-close by one person, so their later shifts need
+    // nobody. Keyed `${location}:${position}`.
+    const coveredPositions = new Set<string>()
+
+    /** Give someone a position for the whole of that location's opening hours. */
+    function assignFullDay(e: Employee, location: Location, position: string, fallback: string) {
+      const h = getHoursForDate(hoursMap, location, date, settings!)
+      assignments.push({
+        year,
+        date,
+        location,
+        position,
+        slot_order: 1,
+        employee_id: e.id,
+        planned_start: h?.open_time ?? fallback,
+        planned_end: h?.close_time ?? null,
+        status: 'draft',
+      })
+      assignedToday.add(e.id)
+      recordShift(e.id)
+      coveredPositions.add(`${location}:${position}`)
+      hoursTally.set(
+        e.id,
+        (hoursTally.get(e.id) ?? 0) +
+          shiftLengthHours(h?.open_time ?? null, h?.close_time ?? null)
+      )
+    }
+
+    // Pin the Stadium manager first — they're fixed at the Stadium for the
+    // tournament and float between Register and Prep.
     if (
       stadiumManager &&
       stadiumShifts.length > 0 &&
@@ -196,26 +222,39 @@ export async function autoSchedulePeriod(
     ) {
       const pos =
         STADIUM_POSITIONS.find(p => canWork(stadiumManager, p.id)) ?? STADIUM_POSITIONS[0]
-      const stadiumHours = getHoursForDate(hoursMap, 'stadium', date, settings)
-      assignments.push({
-        year,
-        date,
-        location: 'stadium',
-        position: pos.id,
-        slot_order: 1,
-        employee_id: stadiumManager.id,
-        planned_start: stadiumHours?.open_time ?? stadiumShifts[0].start,
-        planned_end: stadiumHours?.close_time ?? null,
-        status: 'draft',
-      })
-      assignedToday.add(stadiumManager.id)
-      recordShift(stadiumManager.id)
-      managerCovers.add(pos.id)
-      hoursTally.set(
-        stadiumManager.id,
-        (hoursTally.get(stadiumManager.id) ?? 0) +
-          shiftLengthHours(stadiumHours?.open_time ?? null, stadiumHours?.close_time ?? null)
+      assignFullDay(stadiumManager, 'stadium', pos.id, stadiumShifts[0].start)
+    }
+
+    // Then anyone who works full days. They take a position outright, which is
+    // why they're placed before the shift rotation — every position they hold
+    // is one fewer that needs three people cycling through it.
+    const fullDayCandidates: { location: Location; position: string }[] = [
+      ...(fvShifts.length > 0
+        ? fvPositions.map(p => ({ location: 'food_village' as Location, position: p.id }))
+        : []),
+      ...(stadiumShifts.length > 0
+        ? STADIUM_POSITIONS.map(p => ({ location: 'stadium' as Location, position: p.id }))
+        : []),
+    ]
+
+    const fullDayStaff = availableEmps
+      .filter((e: Employee) => e.works_full_day && !assignedToday.has(e.id) && underCap(e))
+      .sort((a: Employee, b: Employee) =>
+        (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
       )
+
+    for (const e of fullDayStaff) {
+      const target = fullDayCandidates.find(
+        c =>
+          !coveredPositions.has(`${c.location}:${c.position}`) &&
+          canWork(e, c.position as Position) &&
+          canWorkLocation(e, c.location)
+      )
+      // No free position they can work — they fall through to the normal
+      // rotation below rather than being left off the day entirely.
+      if (!target) continue
+      const first = target.location === 'food_village' ? fvShifts[0] : stadiumShifts[0]
+      assignFullDay(e, target.location, target.position, first.start)
     }
 
     // Coverage decides WHICH slots get staffed; fairness decides WHO fills
@@ -225,9 +264,11 @@ export async function autoSchedulePeriod(
     // shift before anyone's handoff — consuming one eligible person per slot
     // to work out how many are actually staffable today.
     const openSlots = slots.filter(
-      s => !(s.location === 'stadium' && managerCovers.has(s.position))
+      s => !coveredPositions.has(`${s.location}:${s.position}`)
     )
-    const unclaimed = new Set(availableEmps.map((e: Employee) => e.id))
+    const unclaimed = new Set(
+      availableEmps.filter((e: Employee) => !assignedToday.has(e.id)).map((e: Employee) => e.id)
+    )
     const staffable: typeof openSlots = []
     for (const slot of openSlots) {
       const candidate = availableEmps.find(

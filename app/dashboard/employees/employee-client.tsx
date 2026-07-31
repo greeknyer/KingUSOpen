@@ -294,7 +294,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         </p>
       </div>
 
-      <div>
+      <div className="space-y-2">
         <label className="flex items-center gap-2.5 px-3 py-2.5 min-h-[44px] rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition">
           <input
             type="checkbox"
@@ -304,6 +304,23 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           />
           <span className="text-sm text-gray-700">
             Manager <span className="text-gray-400">— gets the MGR badge and is preferred for Chef</span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2.5 px-3 py-2.5 min-h-[44px] rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition">
+          <input
+            type="checkbox"
+            name="works_full_day"
+            defaultChecked={employee?.works_full_day ?? false}
+            className="w-5 h-5 accent-blue-600 mt-0.5"
+          />
+          <span className="text-sm text-gray-700">
+            Works full days{' '}
+            <span className="text-gray-400">
+              — holds one position from open to close instead of a shift, so that position
+              needs nobody on its later shifts. The AM/MID/PM ticks above then only decide
+              which days they work.
+            </span>
           </span>
         </label>
       </div>
@@ -420,6 +437,11 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
                         {label}
                       </span>
                     ))}
+                    {emp.works_full_day && (
+                      <span className="text-[11px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-semibold">
+                        Full days
+                      </span>
+                    )}
                     {emp.max_shifts_per_week != null && (
                       <span className="text-[11px] px-2 py-0.5 rounded bg-gray-50 text-gray-500 border border-gray-100">
                         Max {emp.max_shifts_per_week}/wk

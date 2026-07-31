@@ -77,6 +77,9 @@ CREATE TABLE IF NOT EXISTS employees (
   -- Some staff work the Stadium only, or Food Village only.
   locations text[] NOT NULL DEFAULT '{food_village,stadium}'
     CHECK (locations <@ ARRAY['food_village', 'stadium']::text[]),
+  -- Works a position open to close rather than rotating through AM/MID/PM.
+  -- That position then needs nobody on its later shifts.
+  works_full_day boolean NOT NULL DEFAULT false,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
