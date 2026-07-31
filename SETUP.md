@@ -2,22 +2,43 @@
 
 ## 1. Set up the Supabase database
 
-1. Go to your Supabase project → **SQL Editor**
-2. Open `supabase/schema.sql` and paste the entire contents
-3. Click **Run** — creates all tables, policies, and indexes
+**A new database:** open `supabase/schema.sql`, paste the whole thing into
+Supabase → **SQL Editor**, and Run. It creates every table, policy, index and
+grant, and already includes everything the migrations add.
+
+**An existing database:** run the files in `supabase/migrations/` in numerical
+order, skipping any you have already applied. Each is idempotent, so re-running
+one is harmless.
+
+| Migration | Adds |
+|---|---|
+| `001_operating_hours` | per-day opening hours for both locations |
+| `002_shift_templates` | the Food Village's AM / MID / PM shift times |
+| `003_employee_skills` | skills, manager flag, designated managers |
+| `004_employee_shifts_locations` | locations, weekly availability, weekly cap |
+| `005_availability_shifts` | shift-level availability overrides |
+| `006_full_day_staff` | staff who work open to close |
+| `007_availability_full_day` | full days as a per-date override |
+
+> The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
+> tables the API roles hold privileges on — without them every table returns
+> `PGRST205: not found in schema cache` despite existing. They don't weaken
+> security: the RLS policies still require an authenticated user.
 
 ## 2. Create a manager login
 
-In Supabase → **Authentication → Users → Add user → Create new user**
-Enter the manager's email and password. Done.
+Supabase → **Authentication → Users → Add user → Create new user**. Enter the
+manager's email and password. There is no self-service sign-up.
 
 ## 3. Set environment variables
 
-The `.env.local` file already has the test credentials. For production, update:
 ```
-NEXT_PUBLIC_SUPABASE_URL=your_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 ```
+
+Both must come from the **same** Supabase project — a URL and key from different
+projects fail with a 401 that looks like a login problem.
 
 For Vercel: add both in Project → Settings → Environment Variables.
 
@@ -27,55 +48,108 @@ For Vercel: add both in Project → Settings → Environment Variables.
 npm install
 npm run dev
 ```
-Open http://localhost:3000 → redirected to login.
 
-## 5. First steps after logging in
+## 5. First run, in order
 
-1. **Tournament Setup** → Enter the year and Week 1 start date (first Monday)
-2. Configure which days the Stadium is open per period
-3. Configure Register 4 active/inactive per period
-4. **Employees** → Add all staff
-5. **Availability** → Set who is available each day
-6. **Schedule** → Auto-schedule or assign manually; Publish when done
-7. **Time Tracking** → Enter daily clock-in/out during the tournament
-8. **Payroll Export** → Download Excel report at end of each week
+Each step feeds the next, so it's worth doing them in this order.
 
-## App structure
+1. **Tournament Setup** → year, the Monday Week 1 starts, pre-tournament days.
+   Every date in the app derives from these. Also pick the **General Manager**
+   and **Stadium Manager** here.
+2. **Tournament Setup → Hours of Operation** → per-day opening hours for each
+   location. Leave *Closes* blank for an open-ended day (Stadium 6pm → Close).
+   *Apply to period* copies one day's hours across the week.
+3. **Tournament Setup → Food Village Shift Times** → the AM / MID / PM windows.
+4. **Employees** → for each person: positions, locations, weekly availability,
+   max shifts per week, manager and full-day flags.
+5. **Availability** → already filled in from each person's weekly pattern. Only
+   touch dates that differ from their usual.
+6. **Schedule** → Auto-Schedule a period, adjust by hand, then **Publish**.
+7. **Time Tracking** → *Fill from schedule*, then correct anyone who ran long
+   or short.
+8. **Payroll Export** → weekly Excel file.
+
+## How the app is put together
 
 ### Periods
-- **Pre-tournament** — setup days before Week 1 (configurable, default 3)
-- **Week 1** — first 7 days of tournament
-- **Week 2** — second 7 days
-- **Week 3** — final 7 days
 
-### Food Village positions (10 total)
-- Register 1, 2, 3, 4 (Register 4 active/inactive is configurable per period)
-- Prep 1, 2, 3, 4
-- Chef
-- Salads
+Pre-tournament (configurable, default 3 days), then Weeks 1–3 of seven days
+each. Everything counts from the Week 1 start date.
 
-Each position has **2 handoff slots per day** — Slot 1 = early shift, Slot 2 = late/handoff.
-Click any cell in the schedule to assign an employee and time range.
+### Shifts
 
-### Stadium positions (2 total)
-- Register (manager doubles as register worker)
-- Prep
+The Food Village runs three overlapping shifts every open day:
 
-Stadium days shown as **CLOSED** on non-open days — configurable in Tournament Setup.
+| Shift | Typical time | Role |
+|---|---|---|
+| **AM** | 10am → 4pm | openers, hand off to PM |
+| **MID** | 12pm → Close | overlaps both |
+| **PM** | 4pm → Close | closers |
+
+Two people cover each position from noon, which is what staffs all four
+registers through the peak. The times are editable in Tournament Setup and are
+clamped to each day's real hours, so a day opening late shifts the openers
+forward rather than scheduling someone before the doors open.
+
+The Stadium has no templates — its shifts come from its own hours, giving
+**one** shift on a short or open-ended day and **two** once a day reaches 8
+hours.
+
+### Positions
+
+**Food Village (10)** — Register 1–4, Prep 1–4, Chef, Salads. Register 4 is
+switchable per period.
+**Stadium (2)** — Register, Prep.
+
+Each position requires a matching skill, so Auto-Schedule only places people
+qualified for it.
+
+### Who can work what
+
+Each employee carries:
+
+- **Positions** — Register / Prep / Chef / Salads, several per person
+- **Locations** — Food Village, Stadium, or both
+- **Weekly availability** — which shifts on each day of the week. Everything
+  ticked is *Open*; empty weekends is *Mon–Fri*
+- **Max shifts per week** — a cap per period, blank for none
+- **Manager** — MGR badge, preferred for Chef
+- **Works full days** — holds one position open to close, so that position
+  needs nobody on its later shifts
+
+The **Availability** screen fills itself in from the weekly pattern and stores
+only exceptions, which are outlined in amber. A cell can set specific shifts or
+a full day for one date.
+
+### Managers
+
+- **General Manager** — runs Food Village from **outside** the position grid, so
+  all ten positions still need staffing. Shown as a banner on the schedule.
+- **Stadium Manager** — fixed at the Stadium for the tournament, floats between
+  Register and Prep, works open to close.
+- Anyone else with the manager flag is scheduled normally.
+
+### How Auto-Schedule decides
+
+1. The Stadium manager and any full-day staff take their positions first — each
+   holds one position open to close, so its later shifts need nobody.
+2. Remaining slots are walked in coverage order — every position's opening shift
+   before anyone's handoff — to work out which are staffable.
+3. Those slots are then filled **longest shift first**, always choosing whoever
+   has fewest hours so far, which is what keeps hours even.
+
+Unfilled slots are reported back rather than passed over silently.
 
 ## Deploy to Vercel
 
-```bash
-git init && git add . && git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/king-usopen.git
-git push -u origin main
-```
-Then import the repo in vercel.com and add environment variables.
+Import the repo at vercel.com and add the two environment variables. Pushes to
+`main` deploy automatically.
 
 ## Annual reuse
 
-Each year:
-1. Go to Tournament Setup, change the year and start date
-2. Stadium open days and Register 4 config will reset to defaults for the new year
-3. Employee list carries over (just add new hires, deactivate leavers)
-4. Availability and schedule are per-date so the new year starts fresh
+1. Tournament Setup → change the year and Week 1 start date
+2. Re-check hours of operation and shift times for the new year
+3. Employees carry over — add new hires, deactivate leavers, review each
+   person's availability pattern
+4. Availability, schedule and time entries are per-date, so the new year starts
+   clean

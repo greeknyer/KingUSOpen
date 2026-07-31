@@ -41,18 +41,33 @@ deploying to Vercel, and reusing the app in later years.
 Everything hangs off **Tournament Setup**: enter the year and the Monday that
 Week 1 starts, and every date in the app is derived from it — the
 pre-tournament days count backwards from that Monday, and Weeks 1–3 run forward
-in 7-day blocks. Change those two fields next year and the whole app rolls over.
+in 7-day blocks. Opening hours are set per day per location, and the Food
+Village's shift times live there too. Change the year and start date next
+season and the whole app rolls over.
 
 Two stands are scheduled:
 
-- **Food Village** — 10 positions (Registers 1–4, Prep 1–4, Chef, Salads), each
-  with 2 handoff slots per day. Register 4 can be switched on or off per period.
-- **Stadium** — 2 positions (Register, Prep). Days the Stadium isn't open show
-  as CLOSED; open days are configured per period.
+- **Food Village** — 10 positions (Registers 1–4, Prep 1–4, Chef, Salads) across
+  three overlapping shifts a day: AM (10–4), MID (12–close) and PM (4–close), so
+  two people cover each position through the peak. Register 4 switches on and
+  off per period.
+- **Stadium** — 2 positions (Register, Prep). Its shifts come from its own
+  hours: one on a short or open-ended day, two on a long one. Closed days show
+  as CLOSED.
 
-Schedules are drafted, then **published**. During the tournament, daily
-clock-in/out goes into Time Tracking, and Payroll Export produces the weekly
-Excel file.
+Who can work where is per-employee: which positions they're qualified for,
+which locations, which shifts on which days, and an optional cap on shifts per
+week. Some staff work **full days**, holding a position open to close so its
+later shifts need nobody.
+
+Auto-Schedule respects all of it, staffs every position's opening shift before
+anyone's handoff, and hands the longest shifts to whoever has fewest hours so
+far to keep the week even. It reports slots it couldn't fill rather than
+quietly leaving them.
+
+Schedules are drafted, then **published**. Time Tracking starts each person from
+what they were scheduled for and the manager corrects anyone who ran long or
+short. Payroll Export produces the weekly Excel file.
 
 ## Routes
 
@@ -60,11 +75,11 @@ Excel file.
 |---|---|
 | `/login` | Manager sign-in (Supabase Auth) |
 | `/dashboard` | Overview |
-| `/dashboard/setup` | Year, Week 1 start, Stadium open days, Register 4 |
+| `/dashboard/setup` | Year, Week 1 start, hours of operation, shift times, managers, Register 4 |
 | `/dashboard/employees` | Staff roster |
-| `/dashboard/availability` | Who can work which day |
+| `/dashboard/availability` | Per-date exceptions to each person's weekly pattern |
 | `/dashboard/schedule` | Assign positions and shift times; publish |
-| `/dashboard/timetracking` | Actual clock-in / clock-out |
+| `/dashboard/timetracking` | Clock-in / clock-out, prefilled from the schedule |
 | `/dashboard/payroll` | Weekly Excel export |
 
 Auth is enforced in [proxy.ts](proxy.ts) — every route except `/login` and
