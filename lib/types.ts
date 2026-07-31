@@ -153,6 +153,8 @@ export interface Availability {
   shifts: ShiftPeriod[] | null
   /** Overrides the employee's works_full_day for this date. null = inherit. */
   full_day: boolean | null
+  /** Narrows which skills they cover this date. null = any they hold. */
+  positions: Skill[] | null
   notes: string | null
 }
 
@@ -195,8 +197,17 @@ export interface TimeEntry {
   employee?: Employee
 }
 
-// Position metadata
-export const FOOD_VILLAGE_POSITIONS: { id: Position; label: string; section: string; configurable?: boolean }[] = [
+// Position metadata. `shifts` narrows which of the location's shifts a position
+// actually runs — omitted means all of them.
+type PositionMeta = {
+  id: Position
+  label: string
+  section?: string
+  configurable?: boolean
+  shifts?: ShiftPeriod[]
+}
+
+export const FOOD_VILLAGE_POSITIONS: PositionMeta[] = [
   { id: 'register_1', label: 'Register 1', section: 'Registers' },
   { id: 'register_2', label: 'Register 2', section: 'Registers' },
   { id: 'register_3', label: 'Register 3', section: 'Registers' },
@@ -204,14 +215,31 @@ export const FOOD_VILLAGE_POSITIONS: { id: Position; label: string; section: str
   { id: 'prep_1', label: 'Prep 1', section: 'Prep' },
   { id: 'prep_2', label: 'Prep 2', section: 'Prep' },
   { id: 'prep_3', label: 'Prep 3', section: 'Prep' },
-  { id: 'chef', label: 'Chef', section: 'Kitchen' },
-  { id: 'salads', label: 'Salads', section: 'Kitchen' },
+  // The kitchen runs no mid shift — both its positions are open and close only.
+  { id: 'chef', label: 'Chef', section: 'Kitchen', shifts: ['am', 'pm'] },
+  { id: 'salads', label: 'Salads', section: 'Kitchen', shifts: ['am', 'pm'] },
 ]
 
-export const STADIUM_POSITIONS: { id: Position; label: string }[] = [
+export const STADIUM_POSITIONS: PositionMeta[] = [
   { id: 'stadium_register', label: 'Register' },
   { id: 'stadium_prep', label: 'Prep' },
 ]
+
+const ALL_POSITIONS: PositionMeta[] = [...FOOD_VILLAGE_POSITIONS, ...STADIUM_POSITIONS]
+
+/** Which shifts a position runs. Defaults to every shift its location has. */
+export function positionShifts(position: Position): ShiftPeriod[] {
+  return ALL_POSITIONS.find(p => p.id === position)?.shifts ?? SHIFT_PERIODS.map(s => s.id)
+}
+
+/** Whether a position runs the shift a given slot number represents. */
+export function positionRunsSlot(
+  location: Location,
+  position: Position,
+  slotOrder: number
+): boolean {
+  return positionShifts(position).includes(shiftPeriodFor(location, slotOrder))
+}
 
 /** Which skill a position requires. Both locations draw on the same skills. */
 export const POSITION_SKILL: Record<Position, Skill> = {
@@ -232,6 +260,29 @@ export const POSITION_SKILL: Record<Position, Skill> = {
 /** Whether an employee is qualified to work a position. */
 export function canWork(employee: Employee, position: Position): boolean {
   return (employee.skills ?? []).includes(POSITION_SKILL[position])
+}
+
+/**
+ * The skills someone actually covers on a date. Their qualifications unless the
+ * date narrows them — the salads cover on a Monday shouldn't be pulled onto
+ * prep. Intersected with their skills so an override can only ever narrow.
+ */
+export function coveredSkillsOn(
+  employee: Employee,
+  override?: Availability
+): Skill[] {
+  const held = employee.skills ?? []
+  if (!override?.positions) return held
+  return held.filter(s => override.positions!.includes(s))
+}
+
+/** Whether they're qualified for a position AND covering it on that date. */
+export function canWorkOn(
+  employee: Employee,
+  position: Position,
+  override?: Availability
+): boolean {
+  return coveredSkillsOn(employee, override).includes(POSITION_SKILL[position])
 }
 
 /**

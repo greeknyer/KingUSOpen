@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import {
   Employee, Availability, TournamentSettings, getTournamentDates,
   patternShiftsOn, availableShiftsOn, worksFullDayOn, SHIFT_PERIODS, ShiftPeriod,
-  weekdayIndex, DAY_LABELS,
+  weekdayIndex, DAY_LABELS, SKILLS, Skill, coveredSkillsOn,
 } from '@/lib/types'
 import {
   setAvailabilityShifts, resetAvailability, clearAvailabilityOverrides,
@@ -27,12 +27,13 @@ function sameShifts(a: ShiftPeriod[], b: ShiftPeriod[]): boolean {
 
 /** Picker for one employee on one date. */
 function ShiftPicker({
-  employee, date, current, currentFullDay, isOverride, onClose,
+  employee, date, current, currentFullDay, currentPositions, isOverride, onClose,
 }: {
   employee: Employee
   date: string
   current: ShiftPeriod[]
   currentFullDay: boolean
+  currentPositions: Skill[]
   isOverride: boolean
   onClose: () => void
 }) {
@@ -40,6 +41,7 @@ function ShiftPicker({
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<ShiftPeriod[]>(current)
   const [fullDay, setFullDay] = useState(currentFullDay)
+  const [positions, setPositions] = useState<Skill[]>(currentPositions)
 
   const d = new Date(date + 'T00:00:00')
   const pattern = patternShiftsOn(employee, date)
@@ -58,7 +60,12 @@ function ShiftPicker({
       // A full day covers every shift, so store all three — the scheduler's
       // availability check then passes whichever slot it considers.
       const toSave = asFullDay ? SHIFT_PERIODS.map(s => s.id) : shifts
-      const r = await setAvailabilityShifts(employee.id, date, toSave, asFullDay)
+      // Only worth storing when it actually narrows their qualifications.
+      const held = employee.skills ?? []
+      const narrowed = positions.length > 0 && positions.length < held.length
+      const r = await setAvailabilityShifts(
+        employee.id, date, toSave, asFullDay, narrowed ? positions : null
+      )
       if (r.ok) onClose()
       else setError(r.error)
     })
@@ -137,6 +144,38 @@ function ShiftPicker({
           ))}
         </div>
 
+        {(employee.skills ?? []).length > 1 && (
+          <div className="mb-3">
+            <div className="text-xs font-semibold text-gray-500 mb-1.5">
+              Covering which positions
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {SKILLS.filter(s => (employee.skills ?? []).includes(s.id)).map(s => (
+                <button
+                  key={s.id}
+                  onClick={() =>
+                    setPositions(prev =>
+                      prev.includes(s.id)
+                        ? prev.filter(x => x !== s.id)
+                        : SKILLS.filter(k => [...prev, s.id].includes(k.id)).map(k => k.id)
+                    )
+                  }
+                  className={`px-3 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold border transition active:scale-95 ${
+                    positions.includes(s.id)
+                      ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                      : 'bg-gray-100 text-gray-400 border-gray-200'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1.5">
+              Leave all on for any of theirs. Turn one off to keep them off it that date.
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => save(selected, fullDay)}
@@ -202,11 +241,21 @@ export default function AvailabilityGrid({
     return worksFullDayOn(emp, date, overrides.get(overrideKey(emp.id, date)))
   }
 
+  function positionsFor(emp: Employee, date: string): Skill[] {
+    return coveredSkillsOn(emp, overrides.get(overrideKey(emp.id, date)))
+  }
+
+  /** True when the date narrows them below what they're qualified for. */
+  function positionsNarrowed(emp: Employee, date: string): boolean {
+    return positionsFor(emp, date).length < (emp.skills ?? []).length
+  }
+
   /** An override only counts as a change when it differs from their usual. */
   function isChanged(emp: Employee, date: string): boolean {
     const row = overrides.get(overrideKey(emp.id, date))
     if (!row) return false
     if (row.full_day != null && row.full_day !== (emp.works_full_day ?? false)) return true
+    if (row.positions && row.positions.length < (emp.skills ?? []).length) return true
     return !sameShifts(shiftsFor(emp, date), patternShiftsOn(emp, date))
   }
 
@@ -334,6 +383,12 @@ export default function AvailabilityGrid({
                         title={changed ? 'Changed for this date' : 'From their weekly pattern'}
                       >
                         {full ? 'FULL' : cellLabel(shifts)}
+                        {!off && positionsNarrowed(emp, date) && (
+                          <span className="block text-[9px] font-semibold leading-none mt-0.5 opacity-80">
+                            {SKILLS.filter(s => positionsFor(emp, date).includes(s.id))
+                              .map(s => s.label).join('/')}
+                          </span>
+                        )}
                       </button>
                     </td>
                   )
@@ -354,6 +409,7 @@ export default function AvailabilityGrid({
           date={editing.date}
           current={shiftsFor(editing.employee, editing.date)}
           currentFullDay={fullDayFor(editing.employee, editing.date)}
+          currentPositions={positionsFor(editing.employee, editing.date)}
           isOverride={isChanged(editing.employee, editing.date)}
           onClose={() => setEditing(null)}
         />

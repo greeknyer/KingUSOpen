@@ -5,8 +5,8 @@ import { revalidatePath } from 'next/cache'
 import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
-  ShiftTemplate, shiftsForDay, canWork, canWorkLocation, Position,
-  Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor,
+  ShiftTemplate, shiftsForDay, canWork, canWorkOn, canWorkLocation, Position,
+  Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor, positionRunsSlot,
 } from '@/lib/types'
 
 export async function autoSchedulePeriod(
@@ -92,7 +92,7 @@ export async function autoSchedulePeriod(
     slotOrder: number,
     date: string
   ): boolean {
-    if (!canWork(e, position)) return false
+    if (!canWorkOn(e, position, availMap.get(`${e.id}:${date}`))) return false
     if (!canWorkLocation(e, location)) return false
     return shiftsAvailable(e, date).includes(shiftPeriodFor(location, slotOrder))
   }
@@ -161,6 +161,8 @@ export async function autoSchedulePeriod(
       const fv = fvShifts[s]
       if (fv) {
         for (const pos of fvPositions) {
+          // Not every position runs every shift — the kitchen has no mid.
+          if (!positionRunsSlot('food_village', pos.id, fv.slot_order)) continue
           slots.push({
             location: 'food_village',
             position: pos.id,
@@ -174,6 +176,7 @@ export async function autoSchedulePeriod(
       const st = stadiumShifts[s]
       if (st) {
         for (const pos of STADIUM_POSITIONS) {
+          if (!positionRunsSlot('stadium', pos.id, st.slot_order)) continue
           slots.push({
             location: 'stadium',
             position: pos.id,
@@ -270,7 +273,7 @@ export async function autoSchedulePeriod(
       const target = fullDayCandidates.find(
         c =>
           !coveredPositions.has(`${c.location}:${c.position}`) &&
-          canWork(e, c.position as Position) &&
+          canWorkOn(e, c.position as Position, availMap.get(`${e.id}:${date}`)) &&
           canWorkLocation(e, c.location) &&
           freeAllDay(e, c.location)
       )

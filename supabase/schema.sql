@@ -106,6 +106,8 @@ CREATE TABLE IF NOT EXISTS availability (
   shifts text[] CHECK (shifts IS NULL OR shifts <@ ARRAY['am', 'mid', 'pm']::text[]),
   -- Overrides employees.works_full_day for this date. NULL = inherit.
   full_day boolean,
+  -- Narrows which of their skills they cover this date. NULL = any of them.
+  positions text[] CHECK (positions IS NULL OR positions <@ ARRAY['register', 'prep', 'chef', 'salads']::text[]),
   notes text,
   UNIQUE (employee_id, date)
 );

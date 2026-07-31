@@ -5,7 +5,7 @@ import {
   Employee, ScheduleAssignment, TournamentSettings, OperatingHours, Register4Config,
   FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position,
   Location, buildHoursMap, getHoursForDate, formatHoursRange,
-  ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel,
+  ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel, positionRunsSlot,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
 
@@ -316,6 +316,7 @@ export default function ScheduleClient({
         if (pos.id === 'register_4' && !reg4ActiveSet.has(date)) continue
         const holder = fullDayHolder(location, date, pos.id)
         for (const slotOrder of slotNums) {
+          if (!positionRunsSlot(location, pos.id, slotOrder)) continue
           if (holder && holder.slot_order !== slotOrder) continue
           if (!slotApplies(location, date, slotOrder)) continue
           const filled = getAssignments(date, location, pos.id).some(
@@ -473,12 +474,14 @@ export default function ScheduleClient({
             <tbody>
               {FOOD_VILLAGE_POSITIONS.map(pos => {
                 const isReg4 = pos.id === 'register_4'
-                return FV_SLOTS.map(slotOrder => {
-                  const isFirstSlot = slotOrder === 1
+                // A position only shows rows for the shifts it actually runs.
+                const posSlots = FV_SLOTS.filter(n => positionRunsSlot('food_village', pos.id, n))
+                return posSlots.map((slotOrder, slotIdx) => {
+                  const isFirstSlot = slotIdx === 0
                   return (
                     <tr key={`${pos.id}-${slotOrder}`} className={`border-t ${isFirstSlot ? 'border-gray-100' : 'border-gray-50'}`}>
                       {isFirstSlot && (
-                        <td rowSpan={FV_SLOTS.length} className="px-4 py-1 align-middle sticky left-0 bg-white">
+                        <td rowSpan={posSlots.length} className="px-4 py-1 align-middle sticky left-0 bg-white">
                           <div className="text-xs font-semibold text-gray-700">{pos.label}</div>
                           {isReg4 && <div className="text-[10px] text-gray-400">configurable</div>}
                         </td>
@@ -490,7 +493,7 @@ export default function ScheduleClient({
                         // Check if register 4 is active for this date
                         if (isReg4 && !reg4ActiveSet.has(date)) {
                           return isFirstSlot ? (
-                            <td key={date} rowSpan={FV_SLOTS.length} className="px-1 py-1 align-middle">
+                            <td key={date} rowSpan={posSlots.length} className="px-1 py-1 align-middle">
                               <div className="min-h-[140px] rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
                                 <span className="text-xs text-gray-300">Inactive</span>
                               </div>
@@ -581,12 +584,13 @@ export default function ScheduleClient({
             </thead>
             <tbody>
               {STADIUM_POSITIONS.map(pos => {
-                return STADIUM_SLOTS.map(slotOrder => {
-                  const isFirstSlot = slotOrder === 1
+                const posSlots = STADIUM_SLOTS.filter(n => positionRunsSlot('stadium', pos.id, n))
+                return posSlots.map((slotOrder, slotIdx) => {
+                  const isFirstSlot = slotIdx === 0
                   return (
                     <tr key={`${pos.id}-${slotOrder}`} className={`border-t ${isFirstSlot ? 'border-gray-100' : 'border-gray-50'}`}>
                       {isFirstSlot && (
-                        <td rowSpan={STADIUM_SLOTS.length} className="px-4 py-1 align-middle sticky left-0 bg-white">
+                        <td rowSpan={posSlots.length} className="px-4 py-1 align-middle sticky left-0 bg-white">
                           <div className="text-xs font-semibold text-gray-700">{pos.label}</div>
                         </td>
                       )}
@@ -596,7 +600,7 @@ export default function ScheduleClient({
                       {currentDates.map(date => {
                         if (!isLocationOpen('stadium', date)) {
                           return isFirstSlot ? (
-                            <td key={date} rowSpan={STADIUM_SLOTS.length} className="px-1 py-1 align-middle">
+                            <td key={date} rowSpan={posSlots.length} className="px-1 py-1 align-middle">
                               <div className="min-h-[92px] rounded-lg bg-gray-50 border border-dashed border-gray-100 flex items-center justify-center">
                                 <span className="text-xs text-gray-200">CLOSED</span>
                               </div>

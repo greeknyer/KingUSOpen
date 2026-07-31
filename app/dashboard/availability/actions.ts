@@ -31,17 +31,22 @@ export async function setAvailabilityShifts(
   employeeId: string,
   date: string,
   shifts: string[],
-  fullDay: boolean
+  fullDay: boolean,
+  positions: string[] | null
 ): Promise<SaveResult> {
   const supabase = await createClient()
   const valid = new Set(['am', 'mid', 'pm'])
   const clean = shifts.filter(s => valid.has(s))
+  const validPos = new Set(['register', 'prep', 'chef', 'salads'])
+  const cleanPos = positions?.filter(p => validPos.has(p)) ?? null
 
   const { error } = await supabase.from('availability').upsert(
     {
       employee_id: employeeId,
       date,
       shifts: clean,
+      // null means "any position they hold" — only stored when it narrows.
+      positions: cleanPos && cleanPos.length > 0 ? cleanPos : null,
       // Written explicitly rather than left NULL so the row records the
       // decision made for this date instead of silently inheriting later.
       full_day: clean.length > 0 ? fullDay : false,
