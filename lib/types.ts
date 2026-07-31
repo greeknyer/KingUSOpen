@@ -1,11 +1,20 @@
-export type Role = 'manager' | 'crew'
+/** The distinct jobs someone can be qualified for. */
+export type Skill = 'register' | 'prep' | 'chef' | 'salads'
+
+export const SKILLS: { id: Skill; label: string }[] = [
+  { id: 'register', label: 'Register' },
+  { id: 'prep', label: 'Prep' },
+  { id: 'chef', label: 'Chef' },
+  { id: 'salads', label: 'Salads' },
+]
 
 export interface Employee {
   id: string
   name: string
   email: string | null
   phone: string | null
-  role: Role
+  is_manager: boolean
+  skills: Skill[]
   active: boolean
   created_at: string
 }
@@ -15,6 +24,9 @@ export interface TournamentSettings {
   year: number
   start_date: string          // First Monday of Week 1 (YYYY-MM-DD)
   pre_tournament_days: number // Days before week 1 (default 3)
+  // Fixed for the whole tournament, one per location.
+  general_manager_id: string | null  // runs Food Village, sits outside the grid
+  stadium_manager_id: string | null  // the Stadium's manager, floats Register/Prep
 }
 
 export interface OperatingHours {
@@ -33,6 +45,40 @@ export interface OperatingHours {
 export const DEFAULT_HOURS: Record<Location, { open: string; close: string }> = {
   food_village: { open: '10:00', close: '16:00' },
   stadium: { open: '10:30', close: '16:00' },
+}
+
+export interface ShiftTemplate {
+  id: string
+  year: number
+  location: Location
+  slot_order: number         // 1, 2 or 3
+  start_time: string         // HH:MM
+  end_time: string | null    // HH:MM, or null = runs to that day's close
+}
+
+/**
+ * The Food Village's three overlapping shifts. #1 hands off to #3 at 4pm while
+ * #2 straddles both, putting two people on each position from noon through the
+ * afternoon-into-evening peak — enough to staff all four registers.
+ */
+export const DEFAULT_SHIFT_TEMPLATES: Record<
+  Location,
+  { slot_order: number; start_time: string; end_time: string | null }[]
+> = {
+  food_village: [
+    { slot_order: 1, start_time: '10:00', end_time: '16:00' },
+    { slot_order: 2, start_time: '12:00', end_time: null },
+    { slot_order: 3, start_time: '16:00', end_time: null },
+  ],
+  // The Stadium derives its shifts from each day's hours instead — see
+  // shiftsForDay below — so it has no templates.
+  stadium: [],
+}
+
+/** How many slot rows each location's grid shows. */
+export const SLOTS_PER_LOCATION: Record<Location, number> = {
+  food_village: 3,
+  stadium: 2,
 }
 
 export interface Register4Config {
@@ -102,6 +148,31 @@ export const STADIUM_POSITIONS: { id: Position; label: string }[] = [
   { id: 'stadium_register', label: 'Register' },
   { id: 'stadium_prep', label: 'Prep' },
 ]
+
+/** Which skill a position requires. Both locations draw on the same skills. */
+export const POSITION_SKILL: Record<Position, Skill> = {
+  register_1: 'register',
+  register_2: 'register',
+  register_3: 'register',
+  register_4: 'register',
+  prep_1: 'prep',
+  prep_2: 'prep',
+  prep_3: 'prep',
+  prep_4: 'prep',
+  chef: 'chef',
+  salads: 'salads',
+  stadium_register: 'register',
+  stadium_prep: 'prep',
+}
+
+/** Whether an employee is qualified to work a position. */
+export function canWork(employee: Employee, position: Position): boolean {
+  return (employee.skills ?? []).includes(POSITION_SKILL[position])
+}
+
+export function skillLabel(skill: Skill): string {
+  return SKILLS.find(s => s.id === skill)?.label ?? skill
+}
 
 // Tournament period utilities
 export function getTournamentDates(settings: TournamentSettings): {
@@ -221,6 +292,75 @@ export function planShifts(
     { start: open, end: fromMinutes(mid) },
     { start: fromMinutes(mid), end: close },
   ]
+}
+
+/** Minutes for `t`, pushed past midnight if it lands at or before `baseMin`. */
+function minutesAfter(baseMin: number, t: string): number {
+  const m = toMinutes(t)
+  return m <= baseMin ? m + 1440 : m
+}
+
+export interface DayShift {
+  slot_order: number
+  start: string
+  end: string | null // null = that day's close
+}
+
+/**
+ * The shifts to staff for one location on one day.
+ *
+ * Food Village uses its configured templates, each clamped to the day's actual
+ * opening hours — so a day opening later than usual shifts the openers forward
+ * rather than scheduling someone before the doors open, and a template falling
+ * entirely outside the day is dropped.
+ *
+ * Stadium has no templates: its shifts come from splitting the day's hours,
+ * which yields 1 shift on a short or open-ended day and 2 on a long one.
+ */
+export function shiftsForDay(
+  location: Location,
+  hours: OperatingHours | null,
+  templates: ShiftTemplate[]
+): DayShift[] {
+  if (!hours || !hours.is_open || !hours.open_time) return []
+
+  const relevant = templates
+    .filter(t => t.location === location)
+    .sort((a, b) => a.slot_order - b.slot_order)
+
+  if (relevant.length === 0) {
+    return planShifts(hours.open_time, hours.close_time).map((s, i) => ({
+      slot_order: i + 1,
+      start: s.start,
+      end: s.end,
+    }))
+  }
+
+  const openMin = toMinutes(hours.open_time)
+  const closeMin = hours.close_time ? minutesAfter(openMin, hours.close_time) : null
+
+  const out: DayShift[] = []
+  for (const t of relevant) {
+    // Drop a template whose window ends before the day even opens.
+    if (t.end_time) {
+      const tEnd = minutesAfter(toMinutes(t.start_time), t.end_time)
+      if (tEnd <= openMin) continue
+    }
+
+    const startMin = Math.max(toMinutes(t.start_time), openMin)
+    if (closeMin !== null && startMin >= closeMin) continue // starts at or after close
+
+    let end: string | null
+    if (!t.end_time) {
+      end = hours.close_time // runs to close, which may itself be open-ended
+    } else {
+      const endMin = minutesAfter(startMin, t.end_time)
+      end = closeMin !== null && endMin > closeMin ? hours.close_time : fromMinutes(endMin)
+    }
+
+    out.push({ slot_order: t.slot_order, start: fromMinutes(startMin), end })
+  }
+  return out
 }
 
 /** Where a date sits in the tournament, or null if it falls outside it. */

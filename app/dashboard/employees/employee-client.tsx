@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Employee } from '@/lib/types'
+import { Employee, SKILLS, Skill } from '@/lib/types'
 import { addEmployee, updateEmployee, toggleEmployeeActive } from './actions'
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -54,12 +54,43 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         </div>
       </div>
       <div>
-        <label className="block text-sm font-semibold text-gray-500 mb-1.5">Role *</label>
-        <select name="role" defaultValue={employee?.role ?? 'crew'} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900">
-          <option value="crew">Crew</option>
-          <option value="manager">Manager</option>
-        </select>
+        <label className="block text-sm font-semibold text-gray-500 mb-1.5">
+          Can work these positions *
+        </label>
+        <p className="text-xs text-gray-400 mb-2">
+          Auto-Schedule only places someone in a position they&apos;re ticked for.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {SKILLS.map(s => (
+            <label
+              key={s.id}
+              className="flex items-center gap-2.5 px-3 py-2.5 min-h-[44px] rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition"
+            >
+              <input
+                type="checkbox"
+                name="skills"
+                value={s.id}
+                defaultChecked={employee?.skills?.includes(s.id) ?? false}
+                className="w-5 h-5 accent-gray-900"
+              />
+              <span className="text-sm text-gray-700">{s.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2.5 px-3 py-2.5 min-h-[44px] rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-50 active:bg-gray-100 transition">
+          <input
+            type="checkbox"
+            name="is_manager"
+            defaultChecked={employee?.is_manager ?? false}
+            className="w-5 h-5 accent-purple-600"
+          />
+          <span className="text-sm text-gray-700">
+            Manager <span className="text-gray-400">— gets the MGR badge and is preferred for Chef</span>
+          </span>
+        </label>
       </div>
       <div className="flex gap-3 pt-2">
         <button type="submit" disabled={pending}
@@ -113,7 +144,7 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
           <thead>
             <tr className="border-b border-gray-100">
               <th className="text-left text-xs font-semibold text-gray-400 px-5 py-3">Name</th>
-              <th className="text-left text-xs font-semibold text-gray-400 px-5 py-3">Role</th>
+              <th className="text-left text-xs font-semibold text-gray-400 px-5 py-3">Can work</th>
               <th className="text-left text-xs font-semibold text-gray-400 px-5 py-3">Contact</th>
               <th className="text-left text-xs font-semibold text-gray-400 px-5 py-3">Actions</th>
             </tr>
@@ -128,9 +159,20 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
                   <div className="text-sm font-semibold text-gray-900">{emp.name}</div>
                 </td>
                 <td className="px-5 py-3">
-                  <span className={`text-xs font-bold uppercase px-2 py-1 rounded ${
-                    emp.role === 'manager' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'
-                  }`}>{emp.role}</span>
+                  <div className="flex flex-wrap gap-1 items-center">
+                    {emp.is_manager && (
+                      <span className="text-xs font-bold uppercase px-2 py-1 rounded bg-purple-100 text-purple-700">MGR</span>
+                    )}
+                    {(emp.skills ?? []).length === 0 ? (
+                      <span className="text-xs text-amber-600">No positions set</span>
+                    ) : (
+                      SKILLS.filter(s => emp.skills?.includes(s.id)).map(s => (
+                        <span key={s.id} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600">
+                          {s.label}
+                        </span>
+                      ))
+                    )}
+                  </div>
                 </td>
                 <td className="px-5 py-3 text-xs text-gray-500">
                   {emp.email && <div>{emp.email}</div>}

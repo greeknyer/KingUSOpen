@@ -9,8 +9,12 @@ export async function saveTournamentSettings(formData: FormData) {
   const start_date = formData.get('start_date') as string
   const pre_tournament_days = parseInt(formData.get('pre_tournament_days') as string)
 
+  // Blank select values arrive as '' — store NULL so the FK stays valid.
+  const general_manager_id = (formData.get('general_manager_id') as string) || null
+  const stadium_manager_id = (formData.get('stadium_manager_id') as string) || null
+
   await supabase.from('tournament_settings').upsert(
-    { year, start_date, pre_tournament_days },
+    { year, start_date, pre_tournament_days, general_manager_id, stadium_manager_id },
     { onConflict: 'year' }
   )
   revalidatePath('/dashboard/setup')
@@ -65,4 +69,26 @@ export async function saveRegister4Config(
     )
   }
   revalidatePath('/dashboard/setup')
+}
+
+export async function saveShiftTemplates(
+  year: number,
+  templates: { location: string; slot_order: number; start_time: string; end_time: string | null }[]
+) {
+  const supabase = await createClient()
+
+  await supabase.from('shift_templates').delete().eq('year', year)
+
+  if (templates.length > 0) {
+    await supabase.from('shift_templates').insert(
+      templates.map(t => ({
+        year,
+        ...t,
+        // A blank end means the shift runs to that day's close.
+        end_time: t.end_time || null,
+      }))
+    )
+  }
+  revalidatePath('/dashboard/setup')
+  revalidatePath('/dashboard/schedule')
 }

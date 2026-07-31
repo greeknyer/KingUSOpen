@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
-  OperatingHours, Location, buildHoursMap, getHoursForDate, planShifts, shiftLengthHours,
+  OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
+  ShiftTemplate, shiftsForDay, canWork, Position,
 } from '@/lib/types'
 
 export async function autoSchedulePeriod(
@@ -22,12 +23,15 @@ export async function autoSchedulePeriod(
     .eq('status', 'draft')
 
   // Load employees, availability, and the hours that define each day's shifts.
-  const [{ data: employees }, { data: avails }, { data: settingsRows }, { data: hoursRows }] =
-    await Promise.all([
+  const [
+    { data: employees }, { data: avails }, { data: settingsRows },
+    { data: hoursRows }, { data: templateRows },
+  ] = await Promise.all([
       supabase.from('employees').select('*').eq('active', true),
       supabase.from('availability').select('*').in('date', dates),
       supabase.from('tournament_settings').select('*').eq('year', year).limit(1),
       supabase.from('operating_hours').select('*').eq('year', year),
+      supabase.from('shift_templates').select('*').eq('year', year),
     ])
 
   if (!employees || employees.length === 0) return { count: 0, unfilled: 0 }
@@ -37,13 +41,17 @@ export async function autoSchedulePeriod(
 
   const hoursMap = buildHoursMap((hoursRows ?? []) as OperatingHours[])
 
-  /** The shifts to staff for a location on a date, from its configured hours. */
+  const templates = (templateRows ?? []) as ShiftTemplate[]
+
+  /**
+   * The shifts to staff for a location on a date. Food Village resolves its
+   * three templates against the day's hours; the Stadium splits its hours,
+   * giving one shift on a short or open-ended day and two on a long one.
+   */
   function shiftsFor(location: Location, date: string) {
     const h = getHoursForDate(hoursMap, location, date, settings!)
-    // No row saved: Food Village falls back to a default day, Stadium stays dark.
-    if (!h) return location === 'food_village' ? planShifts('10:00', '16:00') : []
-    if (!h.is_open) return []
-    return planShifts(h.open_time, h.close_time)
+    if (!h) return []
+    return shiftsForDay(location, h, templates)
   }
 
   // Build availability map: default = available
@@ -62,10 +70,17 @@ export async function autoSchedulePeriod(
   const assignments: object[] = []
   let unfilled = 0
 
+  // Designated managers are fixed for the tournament and never enter the
+  // general pool: the GM runs Food Village from outside the position grid, and
+  // the Stadium manager is always at the Stadium.
+  const gmId = settings.general_manager_id
+  const stadiumManagerId = settings.stadium_manager_id
+  const stadiumManager = employees.find((e: Employee) => e.id === stadiumManagerId)
+
   for (const date of dates) {
-    const availableEmps = employees.filter((e: Employee) => isAvail(e.id, date))
-    const managers = availableEmps.filter((e: Employee) => e.role === 'manager')
-    const crew = availableEmps.filter((e: Employee) => e.role === 'crew')
+    const availableEmps = employees.filter(
+      (e: Employee) => isAvail(e.id, date) && e.id !== gmId && e.id !== stadiumManagerId
+    )
 
     const fvPositions = FOOD_VILLAGE_POSITIONS.filter(p => {
       if (p.id === 'register_4') return register4ActiveDates.includes(date)
@@ -90,28 +105,34 @@ export async function autoSchedulePeriod(
     const slots: Slot[] = []
     const maxShifts = Math.max(fvShifts.length, stadiumShifts.length)
 
+    // `s` is the ordering rank, not the slot number: shiftsForDay drops a
+    // template that falls outside a day's hours, so a day opening at 5pm
+    // returns shifts #2 and #3 with nothing at index 0's usual #1. Carry each
+    // shift's own slot_order through, or assignments land in the wrong row.
     for (let s = 0; s < maxShifts; s++) {
-      if (fvShifts[s]) {
+      const fv = fvShifts[s]
+      if (fv) {
         for (const pos of fvPositions) {
           slots.push({
             location: 'food_village',
             position: pos.id,
             isChef: pos.id === 'chef',
-            slotOrder: s + 1,
-            start: fvShifts[s].start,
-            end: fvShifts[s].end,
+            slotOrder: fv.slot_order,
+            start: fv.start,
+            end: fv.end,
           })
         }
       }
-      if (stadiumShifts[s]) {
+      const st = stadiumShifts[s]
+      if (st) {
         for (const pos of STADIUM_POSITIONS) {
           slots.push({
             location: 'stadium',
             position: pos.id,
             isChef: false,
-            slotOrder: s + 1,
-            start: stadiumShifts[s].start,
-            end: stadiumShifts[s].end,
+            slotOrder: st.slot_order,
+            start: st.start,
+            end: st.end,
           })
         }
       }
@@ -120,14 +141,51 @@ export async function autoSchedulePeriod(
     // One shift per employee per day — a handoff needs a second person.
     const assignedToday = new Set<string>()
 
+    // Pin the Stadium manager first. They float between Register and Prep and
+    // work open to close rather than a split shift, so their position's later
+    // slots need no one — recorded here and skipped below.
+    const managerCovers = new Set<string>()
+    if (stadiumManager && stadiumShifts.length > 0 && isAvail(stadiumManager.id, date)) {
+      const pos =
+        STADIUM_POSITIONS.find(p => canWork(stadiumManager, p.id)) ?? STADIUM_POSITIONS[0]
+      const stadiumHours = getHoursForDate(hoursMap, 'stadium', date, settings)
+      assignments.push({
+        year,
+        date,
+        location: 'stadium',
+        position: pos.id,
+        slot_order: 1,
+        employee_id: stadiumManager.id,
+        planned_start: stadiumHours?.open_time ?? stadiumShifts[0].start,
+        planned_end: stadiumHours?.close_time ?? null,
+        status: 'draft',
+      })
+      assignedToday.add(stadiumManager.id)
+      managerCovers.add(pos.id)
+      hoursTally.set(
+        stadiumManager.id,
+        (hoursTally.get(stadiumManager.id) ?? 0) +
+          shiftLengthHours(stadiumHours?.open_time ?? null, stadiumHours?.close_time ?? null)
+      )
+    }
+
     for (const slot of slots) {
+      // The Stadium manager works their position open to close, so no other
+      // slot of that position needs filling.
+      if (slot.location === 'stadium' && managerCovers.has(slot.position)) continue
+
       // Re-sort each time so the employee with the fewest hours so far goes
-      // next. Chef prefers a manager; everything else prefers crew.
+      // next. Only people qualified for the position are eligible; Chef
+      // prefers a manager among those who can actually cook it.
       const sortByHours = (a: Employee, b: Employee) =>
         (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
+
+      const eligible = availableEmps
+        .filter((e: Employee) => canWork(e, slot.position as Position))
+        .sort(sortByHours)
       const pool = slot.isChef
-        ? [...managers.sort(sortByHours), ...crew.sort(sortByHours)]
-        : [...crew.sort(sortByHours), ...managers.sort(sortByHours)]
+        ? [...eligible.filter(e => e.is_manager), ...eligible.filter(e => !e.is_manager)]
+        : [...eligible.filter(e => !e.is_manager), ...eligible.filter(e => e.is_manager)]
 
       const emp = pool.find(e => !assignedToday.has(e.id))
       if (!emp) {

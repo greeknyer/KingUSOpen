@@ -45,7 +45,7 @@ function TimeRow({
     <tr className="border-t border-gray-50">
       <td className="px-4 py-2.5">
         <div className="text-sm font-medium text-gray-900">{employee.name}</div>
-        {employee.role === 'manager' && (
+        {employee.is_manager && (
           <div className="text-[10px] text-purple-600 font-bold uppercase">MGR</div>
         )}
       </td>

@@ -11,11 +11,13 @@ export default async function SchedulePage() {
     { data: settingsRows },
     { data: operatingHours },
     { data: reg4Config },
+    { data: shiftTemplates },
   ] = await Promise.all([
     supabase.from('employees').select('*').eq('active', true).order('name'),
     supabase.from('tournament_settings').select('*').order('year', { ascending: false }).limit(1),
     supabase.from('operating_hours').select('*'),
     supabase.from('register4_config').select('*'),
+    supabase.from('shift_templates').select('*'),
   ])
 
   const settings = settingsRows?.[0]
@@ -52,6 +54,7 @@ export default async function SchedulePage() {
         settings={settings}
         operatingHours={operatingHours ?? []}
         register4Configs={reg4Config ?? []}
+        shiftTemplates={shiftTemplates ?? []}
       />
     </div>
   )

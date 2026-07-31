@@ -5,10 +5,17 @@ import {
   Employee, ScheduleAssignment, TournamentSettings, OperatingHours, Register4Config,
   FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position,
   Location, buildHoursMap, getHoursForDate, formatHoursRange,
+  ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
 
 const PERIOD_LABELS = ['Pre-tournament', 'Week 1', 'Week 2', 'Week 3']
+
+// Slot rows each grid renders. Food Village runs three overlapping shifts;
+// the Stadium tops out at two. Individual days may use fewer — those cells
+// render as unavailable rather than as empty slots inviting an assignment.
+const FV_SLOTS = Array.from({ length: SLOTS_PER_LOCATION.food_village }, (_, i) => i + 1)
+const STADIUM_SLOTS = Array.from({ length: SLOTS_PER_LOCATION.stadium }, (_, i) => i + 1)
 
 function AssignmentModal({
   date,
@@ -93,7 +100,7 @@ function AssignmentModal({
               <option value="">— Unassigned —</option>
               {employees.map(e => (
                 <option key={e.id} value={e.id}>
-                  {e.name} {e.role === 'manager' ? '(MGR)' : ''}
+                  {e.name} {e.is_manager ? '(MGR)' : ''}
                 </option>
               ))}
             </select>
@@ -192,12 +199,14 @@ export default function ScheduleClient({
   settings,
   operatingHours,
   register4Configs,
+  shiftTemplates,
 }: {
   employees: Employee[]
   assignments: ScheduleAssignment[]
   settings: TournamentSettings
   operatingHours: OperatingHours[]
   register4Configs: Register4Config[]
+  shiftTemplates: ShiftTemplate[]
 }) {
   const [activePeriod, setActivePeriod] = useState(1) // Default to week 1
   const [pending, startTransition] = useTransition()
@@ -222,6 +231,25 @@ export default function ScheduleClient({
     const h = hoursFor(location, date)
     // No row saved yet: Food Village is assumed open, Stadium assumed dark.
     return h ? h.is_open : location === 'food_village'
+  }
+
+  const yearTemplates = shiftTemplates.filter(t => t.year === year)
+
+  const generalManager = employees.find(e => e.id === settings.general_manager_id)
+
+  /** The shifts actually running for a location on a date. */
+  function dayShifts(location: Location, date: string) {
+    return shiftsForDay(location, hoursFor(location, date), yearTemplates)
+  }
+
+  /**
+   * Whether a slot row applies to this date. Shift counts vary by day — the
+   * Stadium runs one shift on a short or open-ended day and two on a long one —
+   * so a row that has no shift on this date is shown as unavailable rather than
+   * as an empty cell inviting an assignment.
+   */
+  function slotApplies(location: Location, date: string, slotOrder: number): boolean {
+    return dayShifts(location, date).some(s => s.slot_order === slotOrder)
   }
 
   const reg4ActiveSet = new Set<string>()
@@ -328,6 +356,18 @@ export default function ScheduleClient({
         <div className="mb-4 px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-700">{message}</div>
       )}
 
+      {/* The General Manager runs Food Village from outside the position grid,
+          so they appear here rather than as a row that could be double-booked. */}
+      {generalManager && (
+        <div className="mb-4 px-4 py-3 rounded-xl bg-purple-50 border border-purple-100 flex items-center gap-3 flex-wrap">
+          <span className="text-xs font-bold uppercase px-2 py-1 rounded bg-purple-200 text-purple-800">GM</span>
+          <span className="text-sm font-semibold text-purple-900">{generalManager.name}</span>
+          <span className="text-xs text-purple-600">
+            On site at Food Village open to close, every open day — not counted toward position coverage.
+          </span>
+        </div>
+      )}
+
       {/* Food Village Grid */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
         <div className="px-5 py-3 border-b border-gray-100 bg-amber-50">
@@ -357,12 +397,12 @@ export default function ScheduleClient({
             <tbody>
               {FOOD_VILLAGE_POSITIONS.map(pos => {
                 const isReg4 = pos.id === 'register_4'
-                return [1, 2].map(slotOrder => {
+                return FV_SLOTS.map(slotOrder => {
                   const isFirstSlot = slotOrder === 1
                   return (
                     <tr key={`${pos.id}-${slotOrder}`} className={`border-t ${isFirstSlot ? 'border-gray-100' : 'border-gray-50'}`}>
                       {isFirstSlot && (
-                        <td rowSpan={2} className="px-4 py-1 align-middle sticky left-0 bg-white">
+                        <td rowSpan={FV_SLOTS.length} className="px-4 py-1 align-middle sticky left-0 bg-white">
                           <div className="text-xs font-semibold text-gray-700">{pos.label}</div>
                           {isReg4 && <div className="text-[10px] text-gray-400">configurable</div>}
                         </td>
@@ -374,12 +414,22 @@ export default function ScheduleClient({
                         // Check if register 4 is active for this date
                         if (isReg4 && !reg4ActiveSet.has(date)) {
                           return isFirstSlot ? (
-                            <td key={date} rowSpan={2} className="px-1 py-1 align-middle">
-                              <div className="min-h-[92px] rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
+                            <td key={date} rowSpan={FV_SLOTS.length} className="px-1 py-1 align-middle">
+                              <div className="min-h-[140px] rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
                                 <span className="text-xs text-gray-300">Inactive</span>
                               </div>
                             </td>
                           ) : null
+                        }
+                        // A shift that isn't running this day gets no cell to fill.
+                        if (!slotApplies('food_village', date, slotOrder)) {
+                          return (
+                            <td key={date} className="px-1 py-1">
+                              <div className="min-h-[44px] rounded-lg bg-gray-50/60 flex items-center justify-center">
+                                <span className="text-[10px] text-gray-300">—</span>
+                              </div>
+                            </td>
+                          )
                         }
                         const existing = getAssignments(date, 'food_village', pos.id).find(a => a.slot_order === slotOrder)
                         return (
@@ -433,12 +483,12 @@ export default function ScheduleClient({
             </thead>
             <tbody>
               {STADIUM_POSITIONS.map(pos => {
-                return [1, 2].map(slotOrder => {
+                return STADIUM_SLOTS.map(slotOrder => {
                   const isFirstSlot = slotOrder === 1
                   return (
                     <tr key={`${pos.id}-${slotOrder}`} className={`border-t ${isFirstSlot ? 'border-gray-100' : 'border-gray-50'}`}>
                       {isFirstSlot && (
-                        <td rowSpan={2} className="px-4 py-1 align-middle sticky left-0 bg-white">
+                        <td rowSpan={STADIUM_SLOTS.length} className="px-4 py-1 align-middle sticky left-0 bg-white">
                           <div className="text-xs font-semibold text-gray-700">{pos.label}</div>
                         </td>
                       )}
@@ -448,12 +498,23 @@ export default function ScheduleClient({
                       {currentDates.map(date => {
                         if (!isLocationOpen('stadium', date)) {
                           return isFirstSlot ? (
-                            <td key={date} rowSpan={2} className="px-1 py-1 align-middle">
+                            <td key={date} rowSpan={STADIUM_SLOTS.length} className="px-1 py-1 align-middle">
                               <div className="min-h-[92px] rounded-lg bg-gray-50 border border-dashed border-gray-100 flex items-center justify-center">
                                 <span className="text-xs text-gray-200">CLOSED</span>
                               </div>
                             </td>
                           ) : null
+                        }
+                        // Short and open-ended Stadium days run a single shift,
+                        // so slot #2 has nothing to fill on those dates.
+                        if (!slotApplies('stadium', date, slotOrder)) {
+                          return (
+                            <td key={date} className="px-1 py-1">
+                              <div className="min-h-[44px] rounded-lg bg-gray-50/60 flex items-center justify-center">
+                                <span className="text-[10px] text-gray-300">—</span>
+                              </div>
+                            </td>
+                          )
                         }
                         const existing = getAssignments(date, 'stadium', pos.id).find(a => a.slot_order === slotOrder)
                         return (
