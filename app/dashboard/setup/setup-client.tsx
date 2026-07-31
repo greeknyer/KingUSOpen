@@ -178,7 +178,7 @@ export default function SetupClient({
                 type="number"
                 value={year}
                 onChange={e => setYear(parseInt(e.target.value))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
                 min={2020}
                 max={2099}
               />
@@ -190,7 +190,7 @@ export default function SetupClient({
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
                 required
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
               <p className="text-xs text-gray-400 mt-1">First Monday of the tournament</p>
             </div>
@@ -200,7 +200,7 @@ export default function SetupClient({
                 type="number"
                 value={preDays}
                 onChange={e => setPreDays(parseInt(e.target.value))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
                 min={0}
                 max={7}
               />
@@ -210,7 +210,7 @@ export default function SetupClient({
           <button
             type="submit"
             disabled={pending || !startDate}
-            className="px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50 transition"
+            className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition"
           >
             {pending ? 'Saving…' : 'Save Tournament Settings'}
           </button>
@@ -227,7 +227,7 @@ export default function SetupClient({
           <button
             onClick={handleSaveStadium}
             disabled={pending}
-            className="px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50 transition"
+            className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition"
           >
             {pending ? 'Saving…' : 'Save Stadium Schedule'}
           </button>
@@ -248,7 +248,7 @@ export default function SetupClient({
                       <button
                         key={i}
                         onClick={() => toggleStadium(p.id, i)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                        className={`px-4 py-2.5 min-h-[44px] min-w-[64px] rounded-lg text-sm font-semibold border transition active:scale-95 ${
                           isOpen
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
                             : 'bg-gray-100 text-gray-400 border-gray-200'
@@ -276,7 +276,7 @@ export default function SetupClient({
           <button
             onClick={handleSaveReg4}
             disabled={pending}
-            className="px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50 transition"
+            className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition"
           >
             {pending ? 'Saving…' : 'Save Register 4'}
           </button>
@@ -289,7 +289,7 @@ export default function SetupClient({
               <button
                 key={p.id}
                 onClick={() => toggleReg4(p.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold border transition ${
+                className={`px-4 py-2.5 min-h-[44px] rounded-lg text-sm font-semibold border transition active:scale-95 ${
                   isActive
                     ? 'bg-blue-100 text-blue-800 border-blue-200'
                     : 'bg-gray-100 text-gray-400 border-gray-200'

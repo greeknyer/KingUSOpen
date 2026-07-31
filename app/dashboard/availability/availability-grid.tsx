@@ -71,7 +71,7 @@ export default function AvailabilityGrid({
           <button
             key={i}
             onClick={() => setActivePeriod(i)}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+            className={`px-4 py-2.5 min-h-[44px] rounded-md text-sm font-semibold transition active:scale-95 ${
               activePeriod === i ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -81,8 +81,8 @@ export default function AvailabilityGrid({
         ))}
       </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-4 text-xs text-gray-500">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
           <span className="flex items-center gap-1.5">
             <span className="w-4 h-4 rounded bg-emerald-200 border border-emerald-300 inline-block"></span>Available
           </span>
@@ -93,7 +93,7 @@ export default function AvailabilityGrid({
         </div>
         <button
           onClick={handleSetAll}
-          className="text-xs text-gray-500 hover:text-gray-900 font-medium transition px-2 py-1 rounded hover:bg-gray-100"
+          className="text-sm text-gray-500 hover:text-gray-900 font-medium transition px-4 py-2.5 min-h-[44px] rounded-lg hover:bg-gray-100 active:bg-gray-200 shrink-0"
         >
           Set all available
         </button>
@@ -119,23 +119,25 @@ export default function AvailabilityGrid({
             {employees.map(emp => (
               <tr key={emp.id} className="border-t border-gray-50">
                 <td className="px-4 py-2 sticky left-0 bg-white">
-                  <div className="text-xs font-semibold text-gray-900">{emp.name}</div>
+                  <div className="text-sm font-semibold text-gray-900">{emp.name}</div>
                   {emp.role === 'manager' && (
-                    <div className="text-[10px] text-purple-600 font-bold uppercase">MGR</div>
+                    <div className="text-[11px] text-purple-600 font-bold uppercase">MGR</div>
                   )}
                 </td>
                 {currentDates.map(date => {
                   const avail = isAvailable(availMap, emp.id, date)
                   return (
-                    <td key={date} className="px-1 py-1.5 text-center">
+                    <td key={date} className="px-1 py-1 text-center">
                       <button
                         onClick={() => handleToggle(emp.id, date)}
-                        className={`w-8 h-8 rounded-lg text-xs font-bold transition hover:scale-110 ${
+                        // 44px is Apple's minimum comfortable touch target; the
+                        // previous 32px was a reliable mis-tap on an iPad.
+                        className={`w-11 h-11 rounded-lg text-sm font-bold transition active:scale-95 ${
                           avail
                             ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200'
                             : 'bg-red-50 text-red-400 border border-red-100 hover:bg-red-100'
                         }`}
-                        title={avail ? 'Click to mark unavailable' : 'Click to mark available'}
+                        title={avail ? 'Tap to mark unavailable' : 'Tap to mark available'}
                       >
                         {avail ? '✓' : '✗'}
                       </button>

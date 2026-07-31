@@ -63,23 +63,31 @@ function AssignmentModal({
   const posLabel = [...FOOD_VILLAGE_POSITIONS, ...STADIUM_POSITIONS].find(p => p.id === position)?.label ?? position
 
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
+    // items-start + overflow-y-auto so the dialog stays reachable when the iPad
+    // on-screen keyboard opens and halves the usable viewport height.
+    <div className="fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md my-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4 gap-3">
           <div>
-            <h2 className="text-base font-bold text-gray-900">{posLabel} · Slot {slotOrder}</h2>
-            <p className="text-xs text-gray-400">{d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
+            <h2 className="text-lg font-bold text-gray-900">{posLabel} · Slot {slotOrder}</h2>
+            <p className="text-sm text-gray-400">{d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 active:bg-gray-200 text-2xl leading-none"
+          >
+            ×
+          </button>
         </div>
 
         <div className="space-y-3">
           <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1">Employee</label>
+            <label className="block text-sm font-semibold text-gray-500 mb-1.5">Employee</label>
             <select
               value={empId}
               onChange={e => setEmpId(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
             >
               <option value="">— Unassigned —</option>
               {employees.map(e => (
@@ -91,21 +99,21 @@ function AssignmentModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">Start time</label>
+              <label className="block text-sm font-semibold text-gray-500 mb-1.5">Start time</label>
               <input
                 type="time"
                 value={start}
                 onChange={e => setStart(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">End time (blank = close)</label>
+              <label className="block text-sm font-semibold text-gray-500 mb-1.5">End time (blank = close)</label>
               <input
                 type="time"
                 value={end}
                 onChange={e => setEnd(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
             </div>
           </div>
@@ -115,7 +123,7 @@ function AssignmentModal({
           <button
             onClick={handleSave}
             disabled={pending}
-            className="flex-1 bg-gray-900 text-white text-sm font-semibold rounded-lg py-2.5 hover:bg-gray-800 disabled:opacity-50 transition"
+            className="flex-1 bg-gray-900 text-white text-sm font-semibold rounded-lg py-3 min-h-[48px] hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition"
           >
             {pending ? 'Saving…' : 'Save'}
           </button>
@@ -123,12 +131,12 @@ function AssignmentModal({
             <button
               onClick={handleRemove}
               disabled={pending}
-              className="px-4 bg-red-50 text-red-600 text-sm font-semibold rounded-lg py-2.5 hover:bg-red-100 disabled:opacity-50 transition"
+              className="px-4 bg-red-50 text-red-600 text-sm font-semibold rounded-lg py-3 min-h-[48px] hover:bg-red-100 active:bg-red-200 disabled:opacity-50 transition"
             >
               Remove
             </button>
           )}
-          <button onClick={onClose} className="px-4 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 transition">
+          <button onClick={onClose} className="px-4 border border-gray-200 text-gray-600 text-sm rounded-lg py-3 min-h-[48px] hover:bg-gray-50 active:bg-gray-100 transition">
             Cancel
           </button>
         </div>
@@ -153,7 +161,9 @@ function SlotCell({
   return (
     <button
       onClick={onOpen}
-      className={`w-full text-left px-2 py-1.5 rounded-lg text-[11px] transition border ${
+      // min-h-[44px] keeps every cell a comfortable tap target — this is the
+      // control you touch most when building a schedule on the iPad.
+      className={`w-full text-left px-2 py-2 min-h-[44px] flex flex-col justify-center rounded-lg text-xs transition border active:scale-[0.97] ${
         assignment
           ? assignment.status === 'published'
             ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
@@ -164,7 +174,7 @@ function SlotCell({
       {assignment && emp ? (
         <div>
           <div className="font-semibold text-gray-800 truncate">{emp.name}</div>
-          <div className="text-gray-500">
+          <div className="text-gray-500 text-[11px]">
             {formatTime(assignment.planned_start)} → {formatTime(assignment.planned_end)}
           </div>
         </div>
@@ -274,7 +284,7 @@ export default function ScheduleClient({
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {PERIOD_LABELS.map((label, i) => (
             <button key={i} onClick={() => setActivePeriod(i)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              className={`px-4 py-2.5 min-h-[44px] rounded-md text-sm font-semibold transition active:scale-95 ${
                 activePeriod === i ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -283,23 +293,23 @@ export default function ScheduleClient({
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-3 text-xs text-gray-500 mr-1">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-200 inline-block"></span>Draft</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-300 inline-block"></span>Published</span>
+        <div className="flex items-center flex-wrap gap-2">
+          <div className="flex items-center gap-3 text-sm text-gray-500 mr-1">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-200 inline-block"></span>Draft</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-300 inline-block"></span>Published</span>
           </div>
           <button onClick={handleAutoSchedule} disabled={pending}
-            className="px-3.5 py-2 bg-gray-900 text-white text-xs font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50 transition">
+            className="px-4 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition">
             {pending ? 'Working…' : '⚡ Auto-Schedule'}
           </button>
           {hasDraft && (
             <>
               <button onClick={handlePublish} disabled={pending}
-                className="px-3.5 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition">
+                className="px-4 py-2.5 min-h-[44px] bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 transition">
                 Publish
               </button>
               <button onClick={handleClearDraft} disabled={pending}
-                className="px-3.5 py-2 border border-gray-200 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-50 disabled:opacity-50 transition">
+                className="px-4 py-2.5 min-h-[44px] border border-gray-200 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 transition">
                 Clear Draft
               </button>
             </>
@@ -354,8 +364,8 @@ export default function ScheduleClient({
                         if (isReg4 && !reg4ActiveSet.has(date)) {
                           return isFirstSlot ? (
                             <td key={date} rowSpan={2} className="px-1 py-1 align-middle">
-                              <div className="min-h-[28px] rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
-                                <span className="text-[10px] text-gray-300">Inactive</span>
+                              <div className="min-h-[92px] rounded-lg bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center">
+                                <span className="text-xs text-gray-300">Inactive</span>
                               </div>
                             </td>
                           ) : null
@@ -402,7 +412,7 @@ export default function ScheduleClient({
                   return (
                     <th key={date} className={`text-center text-xs px-1 py-2 font-semibold min-w-[110px] ${isOpen ? 'text-gray-500' : 'text-gray-300'}`}>
                       {weekday} {month} {d}
-                      {!isOpen && <div className="text-[9px] text-gray-300 font-normal">CLOSED</div>}
+                      {!isOpen && <div className="text-[11px] text-gray-300 font-normal">CLOSED</div>}
                     </th>
                   )
                 })}
@@ -426,8 +436,8 @@ export default function ScheduleClient({
                         if (!stadiumOpenSet.has(date)) {
                           return isFirstSlot ? (
                             <td key={date} rowSpan={2} className="px-1 py-1 align-middle">
-                              <div className="min-h-[28px] rounded-lg bg-gray-50 border border-dashed border-gray-100 flex items-center justify-center">
-                                <span className="text-[10px] text-gray-200">CLOSED</span>
+                              <div className="min-h-[92px] rounded-lg bg-gray-50 border border-dashed border-gray-100 flex items-center justify-center">
+                                <span className="text-xs text-gray-200">CLOSED</span>
                               </div>
                             </td>
                           ) : null

@@ -6,11 +6,11 @@ import { addEmployee, updateEmployee, toggleEmployeeActive } from './actions'
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md my-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-bold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <button onClick={onClose} aria-label="Close" className="shrink-0 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 active:bg-gray-200 text-2xl leading-none">×</button>
         </div>
         {children}
       </div>
@@ -37,37 +37,37 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-1">Name *</label>
+        <label className="block text-sm font-semibold text-gray-500 mb-1.5">Name *</label>
         <input name="name" defaultValue={employee?.name} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900" />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1">Email</label>
+          <label className="block text-sm font-semibold text-gray-500 mb-1.5">Email</label>
           <input name="email" type="email" defaultValue={employee?.email ?? ''}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900" />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1">Phone</label>
+          <label className="block text-sm font-semibold text-gray-500 mb-1.5">Phone</label>
           <input name="phone" defaultValue={employee?.phone ?? ''}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900" />
         </div>
       </div>
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-1">Role *</label>
+        <label className="block text-sm font-semibold text-gray-500 mb-1.5">Role *</label>
         <select name="role" defaultValue={employee?.role ?? 'crew'} required
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900">
           <option value="crew">Crew</option>
           <option value="manager">Manager</option>
         </select>
       </div>
       <div className="flex gap-3 pt-2">
         <button type="submit" disabled={pending}
-          className="flex-1 bg-gray-900 text-white text-sm font-semibold rounded-lg py-2.5 hover:bg-gray-800 disabled:opacity-50 transition">
+          className="flex-1 bg-gray-900 text-white text-sm font-semibold rounded-lg py-3 min-h-[48px] hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition">
           {pending ? 'Saving…' : employee ? 'Save Changes' : 'Add Employee'}
         </button>
         <button type="button" onClick={onClose}
-          className="px-4 border border-gray-200 text-gray-600 text-sm font-semibold rounded-lg py-2.5 hover:bg-gray-50 transition">
+          className="px-4 border border-gray-200 text-gray-600 text-sm font-semibold rounded-lg py-3 min-h-[48px] hover:bg-gray-50 active:bg-gray-100 transition">
           Cancel
         </button>
       </div>
@@ -97,13 +97,13 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {(['active', 'inactive', 'all'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${filter === f ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+              className={`px-4 py-2.5 min-h-[44px] rounded-md text-sm font-semibold transition active:scale-95 ${filter === f ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
               {f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
         </div>
         <button onClick={() => setShowAdd(true)}
-          className="px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition">
+          className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 transition">
           + Add Employee
         </button>
       </div>
@@ -139,11 +139,11 @@ export default function EmployeeClient({ employees }: { employees: Employee[] })
                 <td className="px-5 py-3">
                   <div className="flex gap-2">
                     <button onClick={() => setEditing(emp)}
-                      className="text-xs text-gray-500 hover:text-gray-900 font-medium transition px-2 py-1 rounded hover:bg-gray-100">
+                      className="text-sm text-gray-500 hover:text-gray-900 font-medium transition px-3 py-2.5 min-h-[44px] rounded-lg hover:bg-gray-100 active:bg-gray-200">
                       Edit
                     </button>
                     <button onClick={() => handleToggle(emp)} disabled={pending}
-                      className={`text-xs font-medium transition px-2 py-1 rounded hover:bg-gray-100 ${emp.active ? 'text-red-500 hover:text-red-700' : 'text-emerald-600 hover:text-emerald-800'}`}>
+                      className={`text-sm font-medium transition px-3 py-2.5 min-h-[44px] rounded-lg hover:bg-gray-100 active:bg-gray-200 ${emp.active ? 'text-red-500 hover:text-red-700' : 'text-emerald-600 hover:text-emerald-800'}`}>
                       {emp.active ? 'Deactivate' : 'Activate'}
                     </button>
                   </div>

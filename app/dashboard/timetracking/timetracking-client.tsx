@@ -54,7 +54,7 @@ function TimeRow({
           type="time"
           value={inTime}
           onChange={e => { setInTime(e.target.value); setSaved(false) }}
-          className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-gray-900"
+          className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
       </td>
       <td className="px-3 py-2">
@@ -62,7 +62,7 @@ function TimeRow({
           type="time"
           value={outTime}
           onChange={e => { setOutTime(e.target.value); setSaved(false) }}
-          className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-gray-900"
+          className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
       </td>
       <td className="px-3 py-2">
@@ -74,7 +74,7 @@ function TimeRow({
         <button
           onClick={handleSave}
           disabled={pending}
-          className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+          className={`px-4 py-2.5 min-h-[44px] text-sm font-semibold rounded-lg transition active:scale-95 ${
             saved
               ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
               : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
@@ -111,13 +111,13 @@ export default function TimeTrackingClient({
 
   return (
     <div>
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-4 mb-6">
         <div>
-          <label className="block text-xs font-semibold text-gray-500 mb-1">Date</label>
+          <label className="block text-sm font-semibold text-gray-500 mb-1.5">Date</label>
           <select
             value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+            className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
           >
             {allDates.map(d => {
               const dd = new Date(d + 'T00:00:00')

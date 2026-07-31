@@ -95,7 +95,7 @@ export default function PayrollClient({
           <span className="text-sm font-semibold text-gray-900">Hours Summary</span>
           <button
             onClick={handleExcel}
-            className="px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition"
+            className="px-5 py-2.5 min-h-[44px] bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 active:bg-emerald-800 transition"
           >
             ↓ Export Excel
           </button>

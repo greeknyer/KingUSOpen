@@ -3,3 +3,54 @@
 body {
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ─────────────────────────────────────────────
+   iPad / touch behaviour
+   This app is used primarily on an iPad, so these are load-bearing,
+   not polish. Desktop is unaffected except for slightly larger inputs.
+   ───────────────────────────────────────────── */
+
+/* iOS Safari zooms the whole page when you focus a form control whose
+   font-size is under 16px, and does not zoom back out. Every input here was
+   text-sm (14px), so tapping a time field would zoom and strand you. Setting
+   the floor at 16px is the only reliable fix — there is no meta-tag opt-out
+   that does not also disable pinch-zoom for accessibility. */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* Remove the grey flash box iOS paints over any tapped element. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Opt out of the legacy 300ms double-tap-to-zoom delay on interactive
+   elements, so taps register immediately. Pinch-zoom still works. */
+button,
+a,
+input,
+select,
+textarea,
+label,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+/* The schedule and availability grids are wider than an iPad in portrait and
+   scroll sideways. Keep that scroll inside the grid instead of letting it
+   rubber-band the whole page once you hit the end. */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* iOS keeps :hover styles latched after a tap until you tap elsewhere, which
+   leaves buttons looking stuck. On touch devices drop hover entirely and let
+   the :active states (added on the controls themselves) give the feedback. */
+@media (hover: none) {
+  .hover\:scale-110:hover {
+    transform: none;
+  }
+}
