@@ -40,6 +40,10 @@ CREATE TABLE IF NOT EXISTS register4_config (
   period int NOT NULL CHECK (period IN (0, 1, 2, 3)),
   position text NOT NULL DEFAULT 'register_4',
   is_active boolean NOT NULL DEFAULT false,
+  -- Which shifts this position runs in this period. '{}' = closed for the
+  -- period, NULL = use the position's default. Lets a till be the midday one
+  -- in one week and a normal AM/PM till in another.
+  shifts text[] CHECK (shifts IS NULL OR shifts <@ ARRAY['am', 'mid', 'pm']::text[]),
   UNIQUE (year, period, position)
 );
 

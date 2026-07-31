@@ -6,6 +6,7 @@ import {
   DEFAULT_HOURS, DEFAULT_SHIFT_TEMPLATES, HANDOFF_MIN_HOURS, formatTime, hoursKey,
   OPTIONAL_POSITIONS, DEFAULT_KITCHEN_TEMPLATES, DEFAULT_REGISTER_TEMPLATES,
   DEFAULT_POSITION_TEMPLATES, FOOD_VILLAGE_POSITIONS, positionRunsSlot, Position,
+  SHIFT_PERIODS, ShiftPeriod, positionShifts, shiftPeriodFor,
   shiftsForDay, shiftLabel,
 } from '@/lib/types'
 import {
@@ -326,6 +327,38 @@ export default function SetupClient({
     return optionalActive.get(`${position}:${period}`) ?? false
   }
 
+  /**
+   * Which shifts each register runs in each period. A register can be the
+   * midday till one week and a normal AM/PM till the next, and ticking nothing
+   * closes that till for the period.
+   */
+  const initRegisterShifts = () => {
+    const map = new Map<string, ShiftPeriod[]>()
+    for (const pos of FOOD_VILLAGE_POSITIONS.filter(p => p.section === 'Registers')) {
+      for (const p of PERIODS) {
+        const saved = register4.find(o => o.position === pos.id && o.period === p.id)
+        map.set(`${pos.id}:${p.id}`, saved?.shifts ?? positionShifts(pos.id))
+      }
+    }
+    return map
+  }
+  const [registerShifts, setRegisterShifts] = useState<Map<string, ShiftPeriod[]>>(initRegisterShifts)
+
+  function registerRuns(position: string, period: number, shift: ShiftPeriod): boolean {
+    return (registerShifts.get(`${position}:${period}`) ?? []).includes(shift)
+  }
+
+  function toggleRegisterShift(position: string, period: number, shift: ShiftPeriod) {
+    setRegisterShifts(prev => {
+      const next = new Map(prev)
+      const key = `${position}:${period}`
+      const cur = next.get(key) ?? []
+      const updated = cur.includes(shift) ? cur.filter(s => s !== shift) : [...cur, shift]
+      next.set(key, SHIFT_PERIODS.filter(s => updated.includes(s.id)).map(s => s.id))
+      return next
+    })
+  }
+
   function toggleOptional(position: string, period: number) {
     setOptionalActive(prev => {
       const next = new Map(prev)
@@ -406,10 +439,28 @@ export default function SetupClient({
 
   async function handleSaveOptional() {
     setMessage(''); setError('')
-    const configs: { period: number; position: string; is_active: boolean }[] = []
+    const configs: {
+      period: number; position: string; is_active: boolean; shifts: string[] | null
+    }[] = []
     for (const pos of OPTIONAL_POSITIONS)
       for (const p of PERIODS)
-        configs.push({ period: p.id, position: pos.id, is_active: optionalOn(pos.id, p.id) })
+        configs.push({
+          period: p.id,
+          position: pos.id,
+          is_active: optionalOn(pos.id, p.id),
+          shifts: optionalOn(pos.id, p.id) ? positionShifts(pos.id) : [],
+        })
+    for (const pos of FOOD_VILLAGE_POSITIONS.filter(p => p.section === 'Registers')) {
+      for (const p of PERIODS) {
+        const shifts = registerShifts.get(`${pos.id}:${p.id}`) ?? []
+        configs.push({
+          period: p.id,
+          position: pos.id,
+          is_active: shifts.length > 0,
+          shifts,
+        })
+      }
+    }
     startTransition(async () => {
       const r = await saveOptionalPositions(year, configs)
       if (r.ok) setMessage('Optional positions saved!')
@@ -957,6 +1008,75 @@ export default function SetupClient({
           its opening shift forward. The kitchen is the exception — it starts before the stand
           opens on purpose.
         </p>
+      </div>
+
+      {/* Which shifts each register runs, per period */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Register Shifts by Week</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              One person per till at a time. A register can be the midday till one week and a
+              normal AM/PM till the next. Tick nothing to close that till for the period.
+            </p>
+          </div>
+          <button
+            onClick={handleSaveOptional}
+            disabled={pending}
+            className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition shrink-0"
+          >
+            {pending ? 'Saving…' : 'Save Register Shifts'}
+          </button>
+        </div>
+
+        <div className="border border-gray-200 rounded-lg overflow-x-auto">
+          <table className="w-full min-w-[620px]">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50">
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2">Register</th>
+                {PERIODS.map(p => (
+                  <th key={p.id} className="text-center text-xs font-semibold text-gray-400 px-3 py-2">
+                    {p.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {FOOD_VILLAGE_POSITIONS.filter(p => p.section === 'Registers').map(pos => (
+                <tr key={pos.id} className="border-t border-gray-50">
+                  <td className="px-4 py-2">
+                    <span className="text-sm font-medium text-gray-900">{pos.label}</span>
+                  </td>
+                  {PERIODS.map(p => {
+                    const on = registerShifts.get(`${pos.id}:${p.id}`) ?? []
+                    return (
+                      <td key={p.id} className="px-2 py-2">
+                        <div className="flex gap-1 justify-center">
+                          {SHIFT_PERIODS.map(s => (
+                            <button
+                              key={s.id}
+                              onClick={() => toggleRegisterShift(pos.id, p.id, s.id)}
+                              className={`w-12 h-11 rounded-lg text-[11px] font-bold border transition active:scale-95 ${
+                                on.includes(s.id)
+                                  ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                  : 'bg-gray-100 text-gray-300 border-gray-200'
+                              }`}
+                            >
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                        {on.length === 0 && (
+                          <div className="text-[10px] text-gray-400 text-center mt-1">closed</div>
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Optional positions */}

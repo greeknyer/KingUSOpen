@@ -26,6 +26,7 @@ one is harmless.
 | `012_kitchen_shift_times` | the kitchen's own earlier shift times |
 | `013_stadium_shift_times` | a set handover time for the Stadium |
 | `014_register_times` | one person per register, staggered opening times |
+| `015_register_period_shifts` | which shifts each register runs, per week |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -99,7 +100,12 @@ when it hands over:
 | Chef, Salads | 7am | 4pm | close |
 
 A register that opens at noon is the **MID** shift — that is what mid means
-here, not a second person on a till that is already staffed. Times are editable
+here, not a second person on a till that is already staffed.
+
+Each register's shifts are set per week in **Register Shifts by Week**, because
+the shape changes: in Week 1 there are three tills and Register 3 is the midday
+one, while from Week 2 there are four and Register 3 opens at 11am as a normal
+AM/PM till. Ticking no shifts closes that till for the week. Times are editable
 in Tournament Setup and clamped to each day's real hours, so a day opening late
 moves its opening shift forward.
 

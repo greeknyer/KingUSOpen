@@ -6,6 +6,7 @@ import {
   FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position,
   Location, buildHoursMap, getHoursForDate, formatHoursRange,
   ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel, positionRunsSlot,
+  buildPeriodShiftMap, positionRunsSlotInPeriod, positionOpenInPeriod,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
 
@@ -301,6 +302,19 @@ export default function ScheduleClient({
     return optionalActiveDates.get(position)?.has(date) ?? false
   }
 
+  // Which shifts each position runs in the period on screen.
+  const periodShiftMap = buildPeriodShiftMap(register4Configs.filter(r => r.year === year))
+
+  function runsSlot(location: Location, position: Position, slotOrder: number): boolean {
+    return location === 'food_village'
+      ? positionRunsSlotInPeriod(periodShiftMap, location, position, slotOrder, activePeriod)
+      : positionRunsSlot(location, position, slotOrder)
+  }
+
+  function openThisPeriod(position: Position): boolean {
+    return positionOpenInPeriod(periodShiftMap, position, activePeriod)
+  }
+
   function getAssignments(date: string, location: string, position: string): ScheduleAssignment[] {
     return initialAssignments.filter(a =>
       a.date === date && a.location === location && a.position === position
@@ -324,7 +338,7 @@ export default function ScheduleClient({
         if (pos.configurable && !positionActive(pos.id, date)) continue
         const holder = fullDayHolder(location, date, pos.id)
         for (const slotOrder of slotNums) {
-          if (!positionRunsSlot(location, pos.id, slotOrder)) continue
+          if (!runsSlot(location, pos.id, slotOrder)) continue
           if (holder && holder.slot_order !== slotOrder) continue
           if (!slotApplies(location, date, slotOrder)) continue
           const filled = getAssignments(date, location, pos.id).some(
@@ -485,7 +499,7 @@ export default function ScheduleClient({
               {FOOD_VILLAGE_POSITIONS.map(pos => {
                 const isOptional = !!pos.configurable
                 // A position only shows rows for the shifts it actually runs.
-                const posSlots = FV_SLOTS.filter(n => positionRunsSlot('food_village', pos.id, n))
+                const posSlots = FV_SLOTS.filter(n => runsSlot('food_village', pos.id, n))
                 return posSlots.map((slotOrder, slotIdx) => {
                   const isFirstSlot = slotIdx === 0
                   return (
@@ -594,7 +608,7 @@ export default function ScheduleClient({
             </thead>
             <tbody>
               {STADIUM_POSITIONS.map(pos => {
-                const posSlots = STADIUM_SLOTS.filter(n => positionRunsSlot('stadium', pos.id, n))
+                const posSlots = STADIUM_SLOTS.filter(n => runsSlot('stadium', pos.id, n))
                 return posSlots.map((slotOrder, slotIdx) => {
                   const isFirstSlot = slotIdx === 0
                   return (

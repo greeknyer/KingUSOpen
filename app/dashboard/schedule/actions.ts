@@ -6,7 +6,8 @@ import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
   ShiftTemplate, shiftsForDay, canWork, canWorkOn, canWorkLocation, Position,
-  sectionForPosition,
+  sectionForPosition, OptionalPositionConfig, buildPeriodShiftMap,
+  positionRunsSlotInPeriod, positionOpenInPeriod, getPeriodAndDayIndex,
   Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor, positionRunsSlot,
   ShiftPeriod,
 } from '@/lib/types'
@@ -30,13 +31,14 @@ export async function autoSchedulePeriod(
   // Load employees, availability, and the hours that define each day's shifts.
   const [
     { data: employees }, { data: avails }, { data: settingsRows },
-    { data: hoursRows }, { data: templateRows },
+    { data: hoursRows }, { data: templateRows }, { data: periodRows },
   ] = await Promise.all([
       supabase.from('employees').select('*').eq('active', true),
       supabase.from('availability').select('*').in('date', dates),
       supabase.from('tournament_settings').select('*').eq('year', year).limit(1),
       supabase.from('operating_hours').select('*').eq('year', year),
       supabase.from('shift_templates').select('*').eq('year', year),
+      supabase.from('register4_config').select('*').eq('year', year),
     ])
 
   if (!employees || employees.length === 0) return { count: 0, unfilled: 0 }
@@ -50,6 +52,14 @@ export async function autoSchedulePeriod(
   const hoursMap = buildHoursMap((hoursRows ?? []) as OperatingHours[])
 
   const templates = (templateRows ?? []) as ShiftTemplate[]
+
+  // Which shifts each position runs, per period — a till can be the midday one
+  // in one week and a normal AM/PM till in another.
+  const periodShiftMap = buildPeriodShiftMap((periodRows ?? []) as OptionalPositionConfig[])
+
+  function periodOf(date: string): number {
+    return getPeriodAndDayIndex(date, settings!)?.period ?? 1
+  }
 
   /**
    * The shifts to staff for a location on a date. Food Village resolves its
@@ -143,10 +153,13 @@ export async function autoSchedulePeriod(
       (e: Employee) => isAvail(e.id, date) && e.id !== gmId && e.id !== stadiumManagerId
     )
 
-    // Optional positions only run on the days they're switched on for.
-    const fvPositions = FOOD_VILLAGE_POSITIONS.filter(p =>
-      p.configurable ? (activeDates[p.id] ?? []).includes(date) : true
-    )
+    const period = periodOf(date)
+    // A position runs today if it runs any shift this period, and — for the
+    // ones still on the on/off switch — if it's switched on for the date.
+    const fvPositions = FOOD_VILLAGE_POSITIONS.filter(p => {
+      if (!positionOpenInPeriod(periodShiftMap, p.id, period)) return false
+      return p.configurable ? (activeDates[p.id] ?? []).includes(date) : true
+    })
 
     const fvShifts = shiftsFor('food_village', date)
     const stadiumShifts = shiftsFor('stadium', date)
@@ -168,15 +181,16 @@ export async function autoSchedulePeriod(
     // Built in operational priority — see SHIFT_PRIORITY. Slots are filled in
     // this same order, so a short day loses mids rather than leaving a position
     // with nobody to open it.
-    for (const period of SHIFT_PRIORITY) {
+    // `shiftPeriod` is AM/MID/PM; `period` above is the tournament week.
+    for (const shiftPeriod of SHIFT_PRIORITY) {
       for (const pos of fvPositions) {
         // Each position takes its section's times — the kitchen opens earlier
         // than the registers, so its AM is a different shift entirely.
         const posShifts = shiftsFor('food_village', date, sectionForPosition(pos.id), pos.id)
-        const fv = posShifts.find(s => shiftPeriodFor('food_village', s.slot_order) === period)
+        const fv = posShifts.find(s => shiftPeriodFor('food_village', s.slot_order) === shiftPeriod)
         if (!fv) continue
         // Not every position runs every shift — the kitchen has no mid.
-        if (!positionRunsSlot('food_village', pos.id, fv.slot_order)) continue
+        if (!positionRunsSlotInPeriod(periodShiftMap, 'food_village', pos.id, fv.slot_order, period)) continue
         slots.push({
           location: 'food_village',
           position: pos.id,
@@ -186,7 +200,7 @@ export async function autoSchedulePeriod(
           end: fv.end,
         })
       }
-      const st = stadiumShifts.find(s => shiftPeriodFor('stadium', s.slot_order) === period)
+      const st = stadiumShifts.find(s => shiftPeriodFor('stadium', s.slot_order) === shiftPeriod)
       if (st) {
         for (const pos of STADIUM_POSITIONS) {
           if (!positionRunsSlot('stadium', pos.id, st.slot_order)) continue

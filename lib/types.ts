@@ -182,13 +182,62 @@ export const SLOTS_PER_LOCATION: Record<Location, number> = {
   stadium: 2,
 }
 
-/** A position that runs some periods and not others. */
+/** How a position is run in one period. */
 export interface OptionalPositionConfig {
   id: string
   year: number
   period: number   // 0=pre, 1=week1, 2=week2, 3=week3
   position: Position
   is_active: boolean
+  /** Shifts it runs that period. [] = closed, null = the position's default. */
+  shifts: ShiftPeriod[] | null
+}
+
+export function periodShiftKey(position: string, period: number): string {
+  return `${position}:${period}`
+}
+
+export function buildPeriodShiftMap(
+  rows: OptionalPositionConfig[]
+): Map<string, ShiftPeriod[] | null> {
+  const map = new Map<string, ShiftPeriod[] | null>()
+  rows.forEach(r => map.set(periodShiftKey(r.position, r.period), r.shifts ?? null))
+  return map
+}
+
+/**
+ * The shifts a position runs in a period. A saved row wins, including an empty
+ * one — that is how a till is closed for a week. With nothing saved the
+ * position's own definition applies.
+ */
+export function shiftsInPeriod(
+  map: Map<string, ShiftPeriod[] | null>,
+  position: Position,
+  period: number
+): ShiftPeriod[] {
+  const saved = map.get(periodShiftKey(position, period))
+  if (saved != null) return saved
+  return positionShifts(position)
+}
+
+/** Whether a position runs the shift a slot represents, in a given period. */
+export function positionRunsSlotInPeriod(
+  map: Map<string, ShiftPeriod[] | null>,
+  location: Location,
+  position: Position,
+  slotOrder: number,
+  period: number
+): boolean {
+  return shiftsInPeriod(map, position, period).includes(shiftPeriodFor(location, slotOrder))
+}
+
+/** A position is open in a period when it runs at least one shift. */
+export function positionOpenInPeriod(
+  map: Map<string, ShiftPeriod[] | null>,
+  position: Position,
+  period: number
+): boolean {
+  return shiftsInPeriod(map, position, period).length > 0
 }
 
 export interface Availability {
@@ -258,7 +307,7 @@ export const FOOD_VILLAGE_POSITIONS: PositionMeta[] = [
   { id: 'register_1', label: 'Register 1', section: 'Registers', shifts: ['am', 'pm'] },
   { id: 'register_2', label: 'Register 2', section: 'Registers', shifts: ['am', 'pm'] },
   { id: 'register_3', label: 'Register 3', section: 'Registers', shifts: ['am', 'pm'] },
-  { id: 'register_4', label: 'Register 4', section: 'Registers', shifts: ['mid'], configurable: true },
+  { id: 'register_4', label: 'Register 4', section: 'Registers', shifts: ['mid'] },
   // Prep runs open and close only, no mid: an AM prepper hands to a PM one.
   { id: 'prep_1', label: 'Prep 1', section: 'Prep', shifts: ['am', 'pm'] },
   { id: 'prep_2', label: 'Prep 2', section: 'Prep', shifts: ['am', 'pm'] },

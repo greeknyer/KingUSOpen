@@ -112,7 +112,7 @@ export async function saveOperatingHours(
 
 export async function saveOptionalPositions(
   year: number,
-  configs: { period: number; position: string; is_active: boolean }[]
+  configs: { period: number; position: string; is_active: boolean; shifts: string[] | null }[]
 ): Promise<SaveResult> {
   const result = await replaceYear('register4_config', year,
     configs.map(c => ({ year, ...c }))
