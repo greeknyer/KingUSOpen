@@ -23,6 +23,7 @@ one is harmless.
 | `009_assignment_full_day` | marks assignments that hold a position all day |
 | `010_availability_positions` | per-date restriction on which positions someone covers |
 | `011_prep4_config` | Prep 4 back, switchable per period like Register 4 |
+| `012_kitchen_shift_times` | the kitchen's own earlier shift times |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
