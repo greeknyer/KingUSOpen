@@ -107,9 +107,28 @@ export interface ShiftTemplate {
   id: string
   year: number
   location: Location
+  /** Section these times apply to. null = the default for any section. */
+  section: string | null
   slot_order: number         // 1, 2 or 3
   start_time: string         // HH:MM
   end_time: string | null    // HH:MM, or null = runs to that day's close
+}
+
+/** Sections that keep their own shift times, separate from the default. */
+export const SECTIONS_WITH_OWN_TIMES = ['Kitchen'] as const
+
+export const DEFAULT_KITCHEN_TEMPLATES: {
+  slot_order: number; start_time: string; end_time: string | null
+}[] = [
+  // The kitchen is in before the stand opens so food is ready for the doors.
+  { slot_order: 1, start_time: '07:00', end_time: '16:00' },
+  { slot_order: 3, start_time: '16:00', end_time: null },
+]
+
+/** The section a position belongs to, or null if it uses the default times. */
+export function sectionForPosition(position: Position): string | null {
+  const s = ALL_POSITIONS.find(p => p.id === position)?.section ?? null
+  return s && (SECTIONS_WITH_OWN_TIMES as readonly string[]).includes(s) ? s : null
 }
 
 /**
@@ -532,13 +551,20 @@ export interface DayShift {
 export function shiftsForDay(
   location: Location,
   hours: OperatingHours | null,
-  templates: ShiftTemplate[]
+  templates: ShiftTemplate[],
+  section: string | null = null
 ): DayShift[] {
   if (!hours || !hours.is_open || !hours.open_time) return []
 
-  const relevant = templates
-    .filter(t => t.location === location)
-    .sort((a, b) => a.slot_order - b.slot_order)
+  // A section with its own times uses them; everything else uses the default.
+  const own = section
+    ? templates.filter(t => t.location === location && t.section === section)
+    : []
+  const usingOwnTimes = own.length > 0
+  const relevant = (usingOwnTimes
+    ? own
+    : templates.filter(t => t.location === location && !t.section)
+  ).sort((a, b) => a.slot_order - b.slot_order)
 
   if (relevant.length === 0) {
     return planShifts(hours.open_time, hours.close_time).map((s, i) => ({
@@ -559,7 +585,13 @@ export function shiftsForDay(
       if (tEnd <= openMin) continue
     }
 
-    const startMin = Math.max(toMinutes(t.start_time), openMin)
+    // The default times are clamped to opening, so a day that opens late moves
+    // the openers forward rather than putting someone on before the doors. A
+    // section with its own times is exempt: the kitchen starts before the stand
+    // opens on purpose, to have food ready for it.
+    const startMin = usingOwnTimes
+      ? toMinutes(t.start_time)
+      : Math.max(toMinutes(t.start_time), openMin)
     if (closeMin !== null && startMin >= closeMin) continue // starts at or after close
 
     let end: string | null

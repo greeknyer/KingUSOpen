@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import {
   TournamentSettings, OperatingHours, OptionalPositionConfig, Location, ShiftTemplate, Employee,
   DEFAULT_HOURS, DEFAULT_SHIFT_TEMPLATES, HANDOFF_MIN_HOURS, formatTime, hoursKey,
-  OPTIONAL_POSITIONS,
+  OPTIONAL_POSITIONS, DEFAULT_KITCHEN_TEMPLATES,
   shiftsForDay, shiftLabel,
 } from '@/lib/types'
 import {
@@ -153,8 +153,34 @@ export default function SetupClient({
   }
   const [fvTemplates, setFvTemplates] = useState<EditableTemplate[]>(initTemplates)
 
+  // The kitchen keeps its own times — it opens before the stand does.
+  const initKitchen = (): EditableTemplate[] => {
+    const saved = shiftTemplates
+      .filter(t => t.location === 'food_village' && t.section === 'Kitchen')
+      .sort((a, b) => a.slot_order - b.slot_order)
+    if (saved.length > 0) {
+      return saved.map(t => ({
+        slot_order: t.slot_order,
+        start_time: t.start_time?.slice(0, 5) ?? '',
+        end_time: t.end_time?.slice(0, 5) ?? '',
+      }))
+    }
+    return DEFAULT_KITCHEN_TEMPLATES.map(t => ({
+      slot_order: t.slot_order,
+      start_time: t.start_time,
+      end_time: t.end_time ?? '',
+    }))
+  }
+  const [kitchenTemplates, setKitchenTemplates] = useState<EditableTemplate[]>(initKitchen)
+
   function updateTemplate(slotOrder: number, patch: Partial<EditableTemplate>) {
     setFvTemplates(prev =>
+      prev.map(t => (t.slot_order === slotOrder ? { ...t, ...patch } : t))
+    )
+  }
+
+  function updateKitchen(slotOrder: number, patch: Partial<EditableTemplate>) {
+    setKitchenTemplates(prev =>
       prev.map(t => (t.slot_order === slotOrder ? { ...t, ...patch } : t))
     )
   }
@@ -164,12 +190,22 @@ export default function SetupClient({
     startTransition(async () => {
       const r = await saveShiftTemplates(
         year,
-        fvTemplates.map(t => ({
-          location: 'food_village',
-          slot_order: t.slot_order,
-          start_time: t.start_time,
-          end_time: t.end_time || null,
-        }))
+        [
+          ...fvTemplates.map(t => ({
+            location: 'food_village',
+            section: null as string | null,
+            slot_order: t.slot_order,
+            start_time: t.start_time,
+            end_time: t.end_time || null,
+          })),
+          ...kitchenTemplates.map(t => ({
+            location: 'food_village',
+            section: 'Kitchen' as string | null,
+            slot_order: t.slot_order,
+            start_time: t.start_time,
+            end_time: t.end_time || null,
+          })),
+        ]
       )
       if (r.ok) setMessage('Food Village shift times saved!')
       else setError(r.error)
@@ -181,6 +217,7 @@ export default function SetupClient({
     id: String(i),
     year,
     location: 'food_village' as Location,
+    section: null,
     slot_order: t.slot_order,
     start_time: t.start_time,
     end_time: t.end_time || null,
@@ -665,6 +702,56 @@ export default function SetupClient({
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="mt-5">
+          <div className="text-sm font-bold text-gray-900 mb-1">Kitchen</div>
+          <p className="text-xs text-gray-400 mb-2">
+            Chef and Salads keep their own times — the kitchen is in before the stand
+            opens so food is ready for the doors.
+          </p>
+          <div className="border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full min-w-[460px]">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2 w-20">Shift</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Starts</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Ends</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                {kitchenTemplates.map(t => (
+                  <tr key={t.slot_order} className="border-t border-gray-50">
+                    <td className="px-4 py-2">
+                      <span className="text-sm font-semibold text-gray-900">
+                        {shiftLabel('food_village', t.slot_order)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="time"
+                        value={t.start_time}
+                        onChange={e => updateKitchen(t.slot_order, { start_time: e.target.value })}
+                        className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="time"
+                        value={t.end_time}
+                        onChange={e => updateKitchen(t.slot_order, { end_time: e.target.value })}
+                        className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-400">
+                      {t.end_time ? 'Hands off at end' : 'Runs to close'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="mt-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-100">

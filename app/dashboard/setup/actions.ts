@@ -103,7 +103,7 @@ export async function saveOptionalPositions(
 
 export async function saveShiftTemplates(
   year: number,
-  templates: { location: string; slot_order: number; start_time: string; end_time: string | null }[]
+  templates: { location: string; section: string | null; slot_order: number; start_time: string; end_time: string | null }[]
 ): Promise<SaveResult> {
   const supabase = await createClient()
 

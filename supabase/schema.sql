@@ -52,12 +52,18 @@ CREATE TABLE IF NOT EXISTS shift_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   year int NOT NULL,
   location text NOT NULL CHECK (location IN ('food_village', 'stadium')),
+  -- Section a position belongs to. NULL is the default any position without
+  -- its own times uses; 'Kitchen' opens earlier than the stand.
+  section text,
   slot_order int NOT NULL CHECK (slot_order IN (1, 2, 3)),
   start_time time NOT NULL,
   end_time time,
-  created_at timestamptz DEFAULT now(),
-  UNIQUE (year, location, slot_order)
+  created_at timestamptz DEFAULT now()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS shift_templates_default_key
+  ON shift_templates (year, location, slot_order) WHERE section IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS shift_templates_section_key
+  ON shift_templates (year, location, section, slot_order) WHERE section IS NOT NULL;
 
 -- Employees
 -- skills lists the positions a person can actually work; Register, Prep, Chef

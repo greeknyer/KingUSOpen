@@ -95,6 +95,10 @@ registers through the peak. The times are editable in Tournament Setup and are
 clamped to each day's real hours, so a day opening late shifts the openers
 forward rather than scheduling someone before the doors open.
 
+Prep and the kitchen run AM and PM only — no mid. The kitchen also keeps its
+own times, opening at 7am so food is ready for the doors, and stays at 7am even
+on a day the stand opens late.
+
 The Stadium has no templates — its shifts come from its own hours, giving
 **one** shift on a short or open-ended day and **two** once a day reaches 8
 hours.

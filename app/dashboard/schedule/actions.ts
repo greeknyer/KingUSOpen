@@ -6,6 +6,7 @@ import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
   ShiftTemplate, shiftsForDay, canWork, canWorkOn, canWorkLocation, Position,
+  sectionForPosition,
   Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor, positionRunsSlot,
   ShiftPeriod,
 } from '@/lib/types'
@@ -55,10 +56,10 @@ export async function autoSchedulePeriod(
    * three templates against the day's hours; the Stadium splits its hours,
    * giving one shift on a short or open-ended day and two on a long one.
    */
-  function shiftsFor(location: Location, date: string) {
+  function shiftsFor(location: Location, date: string, section: string | null = null) {
     const h = getHoursForDate(hoursMap, location, date, settings!)
     if (!h) return []
-    return shiftsForDay(location, h, templates)
+    return shiftsForDay(location, h, templates, section)
   }
 
   // Per-date overrides. Absent means "use the employee's weekly pattern".
@@ -163,20 +164,22 @@ export async function autoSchedulePeriod(
     // this same order, so a short day loses mids rather than leaving a position
     // with nobody to open it.
     for (const period of SHIFT_PRIORITY) {
-      const fv = fvShifts.find(s => shiftPeriodFor('food_village', s.slot_order) === period)
-      if (fv) {
-        for (const pos of fvPositions) {
-          // Not every position runs every shift — the kitchen has no mid.
-          if (!positionRunsSlot('food_village', pos.id, fv.slot_order)) continue
-          slots.push({
-            location: 'food_village',
-            position: pos.id,
-            isChef: pos.id === 'chef',
-            slotOrder: fv.slot_order,
-            start: fv.start,
-            end: fv.end,
-          })
-        }
+      for (const pos of fvPositions) {
+        // Each position takes its section's times — the kitchen opens earlier
+        // than the registers, so its AM is a different shift entirely.
+        const posShifts = shiftsFor('food_village', date, sectionForPosition(pos.id))
+        const fv = posShifts.find(s => shiftPeriodFor('food_village', s.slot_order) === period)
+        if (!fv) continue
+        // Not every position runs every shift — the kitchen has no mid.
+        if (!positionRunsSlot('food_village', pos.id, fv.slot_order)) continue
+        slots.push({
+          location: 'food_village',
+          position: pos.id,
+          isChef: pos.id === 'chef',
+          slotOrder: fv.slot_order,
+          start: fv.start,
+          end: fv.end,
+        })
       }
       const st = stadiumShifts.find(s => shiftPeriodFor('stadium', s.slot_order) === period)
       if (st) {
