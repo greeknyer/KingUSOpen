@@ -36,11 +36,16 @@ export default async function SchedulePage() {
 
   const { allDates } = getTournamentDates(settings)
 
-  const { data: assignments } = await supabase
-    .from('schedule_assignments')
-    .select('*, employee:employees(*)')
-    .in('date', allDates)
-    .order('slot_order')
+  const [{ data: assignments }, { data: availability }] = await Promise.all([
+    supabase
+      .from('schedule_assignments')
+      .select('*, employee:employees(*)')
+      .in('date', allDates)
+      .order('slot_order'),
+    // Per-date overrides, so the staffing summary counts the days someone is
+    // genuinely free rather than what their standing pattern alone implies.
+    supabase.from('availability').select('*').in('date', allDates),
+  ])
 
   return (
     <div className="p-8 max-w-full">
@@ -51,6 +56,7 @@ export default async function SchedulePage() {
       <ScheduleClient
         employees={employees ?? []}
         assignments={assignments ?? []}
+        availability={availability ?? []}
         settings={settings}
         operatingHours={operatingHours ?? []}
         register4Configs={reg4Config ?? []}

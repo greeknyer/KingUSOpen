@@ -7,6 +7,8 @@ import {
   Location, buildHoursMap, getHoursForDate, formatHoursRange,
   ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel, positionRunsSlot,
   buildPeriodShiftMap, positionRunsSlotInPeriod, positionOpenInPeriod,
+  Availability, availableShiftsOn, worksFullDayOn, shiftLengthHours, canWorkLocation,
+  skillLabel, LOCATION_LABELS,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, clearDraftPeriod } from './actions'
 
@@ -215,6 +217,7 @@ function SlotCell({
 export default function ScheduleClient({
   employees,
   assignments: initialAssignments,
+  availability,
   settings,
   operatingHours,
   register4Configs,
@@ -222,6 +225,7 @@ export default function ScheduleClient({
 }: {
   employees: Employee[]
   assignments: ScheduleAssignment[]
+  availability: Availability[]
   settings: TournamentSettings
   operatingHours: OperatingHours[]
   register4Configs: OptionalPositionConfig[]
@@ -230,6 +234,7 @@ export default function ScheduleClient({
   const [activePeriod, setActivePeriod] = useState(1) // Default to week 1
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState('')
+  const [showSummary, setShowSummary] = useState(false)
   const [modal, setModal] = useState<{
     date: string; location: string; position: Position; slotOrder: number; existing?: ScheduleAssignment
   } | null>(null)
@@ -353,6 +358,76 @@ export default function ScheduleClient({
 
   const fvUnfilled = countUnfilled('food_village')
   const stadiumUnfilled = countUnfilled('stadium')
+
+  // ── Staffing summary ──────────────────────────────────────────────
+  //
+  // Auto-Schedule is deterministic, so re-running it can never change who got
+  // what — which makes a surprising day count look arbitrary when it is in fact
+  // forced by an input. This works out, per person, what they got and what was
+  // holding them back, so the answer is on screen rather than inferred.
+
+  const availMap = new Map<string, Availability>()
+  availability.forEach(a => availMap.set(`${a.employee_id}:${a.date}`, a))
+
+  /** Length of an assignment, resolving an open-ended end to the day's close. */
+  function assignmentHours(a: ScheduleAssignment): number {
+    const end = a.planned_end ?? hoursFor(a.location as Location, a.date)?.close_time ?? null
+    return shiftLengthHours(a.planned_start, end)
+  }
+
+  const periodAssignments = initialAssignments.filter(
+    a => currentDates.includes(a.date) && a.employee_id
+  )
+
+  const summary = employees
+    .map(e => {
+      const mine = periodAssignments.filter(a => a.employee_id === e.id)
+      const days = new Set(mine.map(a => a.date)).size
+      const hours = mine.reduce((sum, a) => sum + assignmentHours(a), 0)
+      const fullDays = mine.filter(a => a.is_full_day).length
+
+      // Days they could have worked: somewhere open that they're cleared for,
+      // with their pattern or that date's override leaving them free.
+      const freeDays = currentDates.filter(d => {
+        const openSomewhere =
+          (canWorkLocation(e, 'food_village') && isLocationOpen('food_village', d)) ||
+          (canWorkLocation(e, 'stadium') && isLocationOpen('stadium', d))
+        if (!openSomewhere) return false
+        return availableShiftsOn(e, d, availMap.get(`${e.id}:${d}`)).length > 0
+      }).length
+
+      const cap = e.is_manager ? null : e.max_shifts_per_week
+      const worksFull = currentDates.some(d =>
+        worksFullDayOn(e, d, availMap.get(`${e.id}:${d}`))
+      )
+
+      // The single thing most responsible for the day count, in the order the
+      // scheduler applies them — a cap it will not cross, then hours it is
+      // balancing against, then slots it simply ran out of.
+      let reason = ''
+      let tone: 'flat' | 'warn' | 'stop' = 'flat'
+      if (e.id === settings.general_manager_id) {
+        reason = 'GM — runs Food Village outside the grid'
+      } else if (e.id === settings.stadium_manager_id) {
+        reason = 'Stadium manager — fixed at the Stadium'
+      } else if (freeDays === 0) {
+        reason = 'Not available any day this period'
+        tone = 'stop'
+      } else if (cap != null && days >= cap) {
+        reason = `At their ${cap}-shift weekly cap`
+        tone = 'stop'
+      } else if (fullDays > 0 && days < freeDays) {
+        reason = `${fullDays} full day${fullDays === 1 ? '' : 's'} — long days, so fewer of them`
+        tone = 'warn'
+      } else if (days < freeDays) {
+        reason = `${freeDays - days} free day${freeDays - days === 1 ? '' : 's'} unused — no slot left they could fill`
+        tone = 'warn'
+      }
+
+      return { e, days, hours, freeDays, cap, worksFull, reason, tone }
+    })
+    // Whoever got least is what you came to this table to look at.
+    .sort((a, b) => a.days - b.days || b.freeDays - a.freeDays)
 
   function handleAutoSchedule() {
     setMessage('')
@@ -680,6 +755,84 @@ export default function ScheduleClient({
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Who got what, and what stopped them getting more. */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-6">
+        <button
+          onClick={() => setShowSummary(v => !v)}
+          className="w-full px-5 py-3 min-h-[44px] flex items-center justify-between text-left bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition"
+        >
+          <span>
+            <span className="text-sm font-bold text-slate-900">Who&apos;s working — {PERIOD_LABELS[activePeriod]}</span>
+            <span className="text-xs text-slate-500 ml-2">
+              Days and hours per person, and why anyone got fewer
+            </span>
+          </span>
+          <span className="text-xs font-semibold text-slate-500">{showSummary ? 'Hide' : 'Show'}</span>
+        </button>
+
+        {showSummary && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="bg-white border-b border-gray-100">
+                  <th className="px-4 py-2 text-left font-semibold text-gray-500">Name</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500">Days</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500">Hours</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500">Free days</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-500">Can work</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-500">Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.map(({ e, days, hours, freeDays, cap, worksFull, reason, tone }) => (
+                  <tr key={e.id} className="border-b border-gray-50 last:border-0">
+                    <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap">
+                      {e.name}
+                      {e.is_manager && (
+                        <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">Mgr</span>
+                      )}
+                      {worksFull && (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">Full day</span>
+                      )}
+                      {cap != null && (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Max {cap}</span>
+                      )}
+                    </td>
+                    <td className={`px-3 py-2.5 text-center font-bold tabular-nums ${days === 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                      {days}
+                    </td>
+                    <td className="px-3 py-2.5 text-center tabular-nums text-gray-600">
+                      {hours > 0 ? Math.round(hours) : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-center tabular-nums text-gray-400">{freeDays}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500">
+                      {(e.skills ?? []).map(skillLabel).join(', ') || <span className="text-red-500">No skills set</span>}
+                      {(e.locations ?? []).length === 1 && (
+                        <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">
+                          {LOCATION_LABELS[e.locations![0] as Location]} only
+                        </span>
+                      )}
+                    </td>
+                    <td className={`px-4 py-2.5 text-xs ${
+                      tone === 'stop' ? 'text-red-600 font-semibold'
+                      : tone === 'warn' ? 'text-amber-700'
+                      : 'text-gray-400'
+                    }`}>
+                      {reason || 'Every free day used'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="px-4 py-3 text-xs text-gray-500 bg-gray-50 border-t border-gray-100">
+              Auto-Schedule balances <strong>hours</strong>, not days — so someone on full days
+              reaches everyone else&apos;s total in fewer, longer days. It is also deterministic:
+              running it again always produces the same schedule.
+            </p>
+          </div>
+        )}
       </div>
 
       {modal && (
