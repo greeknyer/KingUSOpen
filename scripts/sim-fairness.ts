@@ -84,7 +84,9 @@ const staff: Employee[] = [
   emp('Prep D', ['prep'], every(['pm'])),
   emp('Prep E', ['prep'], split(['pm'], ALL)),
   emp('Prep F', ['prep', 'register'], every(ALL)),
-  emp('Alberto', ['chef'], every(ALL)),
+  // The chef is in for the morning only, and not every day — his hours come
+  // from his pattern, not from being the only person who can cook.
+  emp('Alberto', ['chef'], { '0': ['am'], '1': ['am'], '2': [], '3': ['am'], '4': ['am'], '5': [], '6': ['am'] }),
   emp('Salads A', ['salads'], every(ALL)),
   emp('Salads B', ['salads', 'prep'], every(ALL)),
   emp('Stadium A', ['register'], every(ALL), { locations: ['stadium'] }),
@@ -119,6 +121,7 @@ function shiftsFor(location: Location, section: string | null = null, position: 
   return shiftsForDay(location, location === 'food_village' ? FV_HOURS : ST_HOURS, [], section, position)
 }
 
+const GAPS = new Map<string, number>()
 let AMPM_TOTAL=0, AMPM_FILLED=0, MID_TOTAL=0, MID_FILLED=0
 export function runWeek() {
   const hoursTally = new Map<string, number>(staff.map(e => [e.id, 0]))
@@ -189,6 +192,15 @@ export function runWeek() {
       const per = shiftPeriodFor(p.location, p.slotOrder)
       if (per === 'mid') MID_FILLED++; else AMPM_FILLED++
     }
+    // Which positions actually went uncovered, to name the gaps rather than count them.
+    for (const s3 of slots) {
+      const held = placements.some(p => p.isFullDay && p.location === s3.location && p.position === s3.position)
+      const filled = placements.some(p => !p.isFullDay && p.location === s3.location && p.position === s3.position && p.slotOrder === s3.slotOrder)
+      if (!held && !filled) {
+        const k = `${s3.position} ${shiftPeriodFor(s3.location, s3.slotOrder).toUpperCase()}`
+        GAPS.set(k, (GAPS.get(k) ?? 0) + 1)
+      }
+    }
     unfilled += dayUnfilled
     for (const p of placements) {
       hoursTally.set(p.employee.id, (hoursTally.get(p.employee.id) ?? 0) + p.hours)
@@ -233,4 +245,6 @@ const mean = worked.reduce((s, h) => s + h, 0) / worked.length
 console.log(`\nmax ${max.toFixed(1)}   min ${min.toFixed(1)}   spread ${(max - min).toFixed(1)}   mean ${mean.toFixed(1)}`)
 const mids = MID_FILLED
 console.log(`AM/PM filled: ${AMPM_FILLED}/${AMPM_TOTAL}   MID filled: ${mids}/${MID_TOTAL}`)
+console.log('\nuncovered slots by position:')
+for (const [k,v] of [...GAPS].sort((a,b)=>b[1]-a[1])) console.log(`  ${k.padEnd(22)} ${v}`)
 console.log(`never scheduled: ${rows.filter(r => r.days === 0).length}   unfilled slots: ${unfilled}`)
