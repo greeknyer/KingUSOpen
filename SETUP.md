@@ -24,6 +24,7 @@ one is harmless.
 | `010_availability_positions` | per-date restriction on which positions someone covers |
 | `011_prep4_config` | Prep 4 back, switchable per period like Register 4 |
 | `012_kitchen_shift_times` | the kitchen's own earlier shift times |
+| `013_stadium_shift_times` | a set handover time for the Stadium |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -100,9 +101,10 @@ Prep and the kitchen run AM and PM only — no mid. The kitchen also keeps its
 own times, opening at 7am so food is ready for the doors, and stays at 7am even
 on a day the stand opens late.
 
-The Stadium has no templates — its shifts come from its own hours, giving
-**one** shift on a short or open-ended day and **two** once a day reaches 8
-hours.
+The Stadium runs AM and PM with its own handover time. Every set of times is
+clamped to the day it runs on, so a day opening late starts late, and a day too
+short or running to an unknown close collapses to a single shift — a
+6pm-to-close evening stays one shift rather than being split.
 
 ### Positions
 

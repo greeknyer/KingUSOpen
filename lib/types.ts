@@ -145,9 +145,13 @@ export const DEFAULT_SHIFT_TEMPLATES: Record<
     { slot_order: 2, start_time: '12:00', end_time: null },
     { slot_order: 3, start_time: '16:00', end_time: null },
   ],
-  // The Stadium derives its shifts from each day's hours instead — see
-  // shiftsForDay below — so it has no templates.
-  stadium: [],
+  // The Stadium hands over at a set time too. Deriving it from each day's
+  // hours instead put the handover at the middle of the day, which drifted
+  // with the closing time and produced times like 4:45pm.
+  stadium: [
+    { slot_order: 1, start_time: '10:00', end_time: '17:00' },
+    { slot_order: 2, start_time: '17:00', end_time: null },
+  ],
 }
 
 /** How many slot rows each location's grid shows. */
@@ -571,10 +575,10 @@ export function shiftsForDay(
     // Village does have them, so an empty set means they are missing rather
     // than absent — fall back to the defaults instead of splitting the day,
     // which would silently drop the mid shift from the registers.
-    if (location === 'food_village') {
-      const fallback = section === 'Kitchen'
-        ? DEFAULT_KITCHEN_TEMPLATES
-        : DEFAULT_SHIFT_TEMPLATES.food_village
+    const fallback = section === 'Kitchen'
+      ? DEFAULT_KITCHEN_TEMPLATES
+      : DEFAULT_SHIFT_TEMPLATES[location]
+    if (fallback.length > 0) {
       return shiftsForDay(
         location,
         hours,

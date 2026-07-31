@@ -148,11 +148,12 @@ export default function SetupClient({
    */
   const buildTemplates = (
     section: string | null,
-    defaults: { slot_order: number; start_time: string; end_time: string | null }[]
+    defaults: { slot_order: number; start_time: string; end_time: string | null }[],
+    location: Location = 'food_village'
   ): EditableTemplate[] => {
     const saved = new Map(
       shiftTemplates
-        .filter(t => t.location === 'food_village' && (t.section ?? null) === section)
+        .filter(t => t.location === location && (t.section ?? null) === section)
         .map(t => [t.slot_order, t])
     )
     return defaults.map(d => {
@@ -172,6 +173,11 @@ export default function SetupClient({
   const [kitchenTemplates, setKitchenTemplates] = useState<EditableTemplate[]>(() =>
     buildTemplates('Kitchen', DEFAULT_KITCHEN_TEMPLATES)
   )
+  // The Stadium hands over at a set time too, rather than at the middle of
+  // whatever hours a day happens to run.
+  const [stadiumTemplates, setStadiumTemplates] = useState<EditableTemplate[]>(() =>
+    buildTemplates(null, DEFAULT_SHIFT_TEMPLATES.stadium, 'stadium')
+  )
 
   function updateTemplate(slotOrder: number, patch: Partial<EditableTemplate>) {
     setFvTemplates(prev =>
@@ -181,6 +187,12 @@ export default function SetupClient({
 
   function updateKitchen(slotOrder: number, patch: Partial<EditableTemplate>) {
     setKitchenTemplates(prev =>
+      prev.map(t => (t.slot_order === slotOrder ? { ...t, ...patch } : t))
+    )
+  }
+
+  function updateStadium(slotOrder: number, patch: Partial<EditableTemplate>) {
+    setStadiumTemplates(prev =>
       prev.map(t => (t.slot_order === slotOrder ? { ...t, ...patch } : t))
     )
   }
@@ -205,9 +217,16 @@ export default function SetupClient({
             start_time: t.start_time,
             end_time: t.end_time || null,
           })),
+          ...stadiumTemplates.map(t => ({
+            location: 'stadium',
+            section: null as string | null,
+            slot_order: t.slot_order,
+            start_time: t.start_time,
+            end_time: t.end_time || null,
+          })),
         ]
       )
-      if (r.ok) setMessage('Food Village shift times saved!')
+      if (r.ok) setMessage('Shift times saved!')
       else setError(r.error)
     })
   }
@@ -754,6 +773,56 @@ export default function SetupClient({
           </div>
         </div>
 
+        <div className="mt-5">
+          <div className="text-sm font-bold text-gray-900 mb-1">Stadium</div>
+          <p className="text-xs text-gray-400 mb-2">
+            Clamped to each day&apos;s hours, so a day opening late starts late. A day too
+            short, or one running to an unknown close, stays a single shift.
+          </p>
+          <div className="border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full min-w-[460px]">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2 w-20">Shift</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Starts</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Ends</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stadiumTemplates.map(t => (
+                  <tr key={t.slot_order} className="border-t border-gray-50">
+                    <td className="px-4 py-2">
+                      <span className="text-sm font-semibold text-gray-900">
+                        {shiftLabel('stadium', t.slot_order)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="time"
+                        value={t.start_time}
+                        onChange={e => updateStadium(t.slot_order, { start_time: e.target.value })}
+                        className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="time"
+                        value={t.end_time}
+                        onChange={e => updateStadium(t.slot_order, { end_time: e.target.value })}
+                        className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-400">
+                      {t.end_time ? 'Hands off at end' : 'Runs to close'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div className="mt-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-100">
           <div className="text-xs font-semibold text-amber-900 mb-1">
             Preview — against Week 1 day 1&apos;s hours
@@ -775,8 +844,9 @@ export default function SetupClient({
         </div>
 
         <p className="text-xs text-gray-400 mt-3">
-          The Stadium has no templates — its shifts come from each day&apos;s hours, giving one shift
-          on a short or open-ended day and two once a day reaches {HANDOFF_MIN_HOURS} hours.
+          Every set of times is clamped to the day it runs on, so a day that opens late moves
+          its opening shift forward. The kitchen is the exception — it starts before the stand
+          opens on purpose.
         </p>
       </div>
 
