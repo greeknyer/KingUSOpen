@@ -28,6 +28,7 @@ one is harmless.
 | `014_register_times` | one person per register, staggered opening times |
 | `015_register_period_shifts` | which shifts each register runs, per week |
 | `016_guaranteed_days` | agreed days per week for returning staff |
+| `017_prep_period_shifts` | which shifts each prep position runs, per week |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -110,6 +111,11 @@ AM/PM till. Ticking no shifts closes that till for the week. Times are editable
 in Tournament Setup and clamped to each day's real hours, so a day opening late
 moves its opening shift forward.
 
+Prep works the same way, in **Prep Shifts by Week** — an AM prepper hands over
+to a PM one, and Prep 4 only comes in for the busy weeks. Ticking no shifts
+closes that position for the week, which is how Prep 4 is switched off, so a
+position being closed is said one way rather than two.
+
 Prep and the kitchen run AM and PM only — no mid. The kitchen also keeps its
 own times, opening at 7am so food is ready for the doors, and stays at 7am even
 on a day the stand opens late.
@@ -121,8 +127,9 @@ short or running to an unknown close collapses to a single shift — a
 
 ### Positions
 
-**Food Village (10)** — Register 1–4, Prep 1–4, Chef, Salads. Register 4 and
-Prep 4 are switchable per period, so they only run the weeks you turn them on.
+**Food Village (10)** — Register 1–4, Prep 1–4, Chef, Salads. Every register and
+prep position is set per week, so Register 4 and Prep 4 run only the weeks you
+give them shifts.
 **Stadium (2)** — Register, Prep.
 
 Each position requires a matching skill, so Auto-Schedule only places people
@@ -136,8 +143,11 @@ Each employee carries:
 - **Locations** — Food Village, Stadium, or both
 - **Weekly availability** — which shifts on each day of the week. Everything
   ticked is *Open*; empty weekends is *Mon–Fri*
+- **Guaranteed days per week** — an agreed number, booked before anyone else
+  shares what's left. Blank unless there's a deal
 - **Max shifts per week** — a cap per period, blank for none
-- **Manager** — MGR badge, preferred for Chef
+- **Manager** — MGR badge. Managers are the *fallback* everywhere, so they stay
+  free to float, and the weekly cap doesn't apply to them
 - **Works full days** — holds one position open to close, so that position
   needs nobody on its later shifts
 
@@ -156,13 +166,34 @@ a full day for one date.
 ### How Auto-Schedule decides
 
 1. The Stadium manager and any full-day staff take their positions first — each
-   holds one position open to close, so its later shifts need nobody.
-2. Remaining slots are walked in coverage order — every position's opening shift
-   before anyone's handoff — to work out which are staffable.
-3. Those slots are then filled **longest shift first**, always choosing whoever
-   has fewest hours so far, which is what keeps hours even.
+   holds one position open to close, so its later shifts need nobody. Their
+   hours are deliberately not levelled against everyone else's: working open to
+   close, every open day, is the arrangement they're on.
+2. Remaining slots are ordered by **coverage first** — every position's opening
+   shift before anyone's handoff, so a short-staffed day loses mids rather than
+   leaving a position with nobody to open it. Within a shift, the slot with
+   **fewest people able to work it** goes first, so a scarce slot is filled
+   while its few takers are still free.
+3. Each slot goes to whoever is **owed days against an agreement**, then to
+   whoever has **worked fewest hours**. That is what keeps hours even.
+4. One exception: someone with only **one place in the whole day** — the chef,
+   whose single skill is chef — keeps it rather than losing it to whoever is
+   behind on hours. For them it isn't a fairness trade, it's not working at all.
 
-Unfilled slots are reported back rather than passed over silently.
+Being available for more shifts never costs you work. An earlier version ranked
+people by how boxed in they were before looking at hours, which left the most
+flexible staff with the least work; hours do the balancing now.
+
+Unfilled slots are reported back rather than passed over silently, and the
+**Who's working** panel on the schedule shows each person's days, hours and the
+reason they didn't get more.
+
+`scripts/sim-fairness.ts` runs a week through the real scheduler and prints the
+spread, for checking a change to any of this:
+
+```bash
+node --import ./scripts/ts-resolve.mjs --experimental-strip-types scripts/sim-fairness.ts
+```
 
 ## Deploy to Vercel
 

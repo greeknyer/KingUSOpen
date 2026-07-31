@@ -114,7 +114,8 @@ const configs: OptionalPositionConfig[] = [
   { year: 2026, period: PERIOD, position: 'register_2', is_active: true, shifts: ['am', 'pm'] },
   { year: 2026, period: PERIOD, position: 'register_3', is_active: true, shifts: ['mid'] },
   { year: 2026, period: PERIOD, position: 'register_4', is_active: false, shifts: [] },
-  { year: 2026, period: PERIOD, position: 'prep_4', is_active: false, shifts: [] },
+  { year: 2026, period: PERIOD, position: 'prep_4', is_active: process.env.PREP4 === '1',
+    shifts: process.env.PREP4 === '1' ? ['am','pm'] : [] },
 ] as OptionalPositionConfig[]
 const periodShiftMap = buildPeriodShiftMap(configs)
 

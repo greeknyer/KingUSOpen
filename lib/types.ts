@@ -121,6 +121,16 @@ export interface ShiftTemplate {
 /** Sections that keep their own shift times, separate from the default. */
 export const SECTIONS_WITH_OWN_TIMES = ['Kitchen', 'Registers'] as const
 
+/**
+ * Sections whose positions are arranged week by week in Tournament Setup.
+ *
+ * These are the parts of the stand whose shape changes between weeks — a till
+ * that is the midday one in Week 1 and a normal AM/PM till later, a fourth
+ * prepper who only comes in for the busy weeks. The kitchen doesn't vary, so
+ * it isn't here.
+ */
+export const SECTIONS_WITH_PERIOD_SHIFTS = ['Registers', 'Prep'] as const
+
 export const DEFAULT_KITCHEN_TEMPLATES: {
   slot_order: number; start_time: string; end_time: string | null
 }[] = [
@@ -314,8 +324,9 @@ export const FOOD_VILLAGE_POSITIONS: PositionMeta[] = [
   { id: 'prep_1', label: 'Prep 1', section: 'Prep', shifts: ['am', 'pm'] },
   { id: 'prep_2', label: 'Prep 2', section: 'Prep', shifts: ['am', 'pm'] },
   { id: 'prep_3', label: 'Prep 3', section: 'Prep', shifts: ['am', 'pm'] },
-  // Off for Week 1, on later — switched per period like Register 4.
-  { id: 'prep_4', label: 'Prep 4', section: 'Prep', shifts: ['am', 'pm'], configurable: true },
+  // Off for Week 1, on later. Set per period in Prep Shifts by Week, like the
+  // registers — its shifts say whether it runs, so it needs no separate switch.
+  { id: 'prep_4', label: 'Prep 4', section: 'Prep', shifts: ['am', 'pm'] },
   // The kitchen runs no mid shift — both its positions are open and close only.
   { id: 'chef', label: 'Chef', section: 'Kitchen', shifts: ['am', 'pm'] },
   { id: 'salads', label: 'Salads', section: 'Kitchen', shifts: ['am', 'pm'] },

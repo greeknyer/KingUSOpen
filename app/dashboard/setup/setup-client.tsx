@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import {
   TournamentSettings, OperatingHours, OptionalPositionConfig, Location, ShiftTemplate, Employee,
   DEFAULT_HOURS, DEFAULT_SHIFT_TEMPLATES, HANDOFF_MIN_HOURS, formatTime, hoursKey,
-  OPTIONAL_POSITIONS, DEFAULT_KITCHEN_TEMPLATES, DEFAULT_REGISTER_TEMPLATES,
+  OPTIONAL_POSITIONS, SECTIONS_WITH_PERIOD_SHIFTS, DEFAULT_KITCHEN_TEMPLATES, DEFAULT_REGISTER_TEMPLATES,
   DEFAULT_POSITION_TEMPLATES, FOOD_VILLAGE_POSITIONS, positionRunsSlot, Position,
   SHIFT_PERIODS, ShiftPeriod, positionShifts, shiftPeriodFor,
   shiftsForDay, shiftLabel,
@@ -328,13 +328,18 @@ export default function SetupClient({
   }
 
   /**
-   * Which shifts each register runs in each period. A register can be the
-   * midday till one week and a normal AM/PM till the next, and ticking nothing
-   * closes that till for the period.
+   * Which shifts each register and prep position runs in each period. A till
+   * can be the midday one in Week 1 and a normal AM/PM till the next; a fourth
+   * prepper only comes in for the busy weeks. Ticking nothing closes that
+   * position for the period, which is how Register 4 and Prep 4 are turned off.
    */
+  const periodShiftPositions = FOOD_VILLAGE_POSITIONS.filter(
+    p => p.section && (SECTIONS_WITH_PERIOD_SHIFTS as readonly string[]).includes(p.section)
+  )
+
   const initRegisterShifts = () => {
     const map = new Map<string, ShiftPeriod[]>()
-    for (const pos of FOOD_VILLAGE_POSITIONS.filter(p => p.section === 'Registers')) {
+    for (const pos of periodShiftPositions) {
       for (const p of PERIODS) {
         const saved = register4.find(o => o.position === pos.id && o.period === p.id)
         map.set(`${pos.id}:${p.id}`, saved?.shifts ?? positionShifts(pos.id))
@@ -343,10 +348,6 @@ export default function SetupClient({
     return map
   }
   const [registerShifts, setRegisterShifts] = useState<Map<string, ShiftPeriod[]>>(initRegisterShifts)
-
-  function registerRuns(position: string, period: number, shift: ShiftPeriod): boolean {
-    return (registerShifts.get(`${position}:${period}`) ?? []).includes(shift)
-  }
 
   function toggleRegisterShift(position: string, period: number, shift: ShiftPeriod) {
     setRegisterShifts(prev => {
@@ -450,7 +451,7 @@ export default function SetupClient({
           is_active: optionalOn(pos.id, p.id),
           shifts: optionalOn(pos.id, p.id) ? positionShifts(pos.id) : [],
         })
-    for (const pos of FOOD_VILLAGE_POSITIONS.filter(p => p.section === 'Registers')) {
+    for (const pos of periodShiftPositions) {
       for (const p of PERIODS) {
         const shifts = registerShifts.get(`${pos.id}:${p.id}`) ?? []
         configs.push({
@@ -841,7 +842,7 @@ export default function SetupClient({
             <table className="w-full min-w-[520px]">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2">Register</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2">Position</th>
                   <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2 w-20">Shift</th>
                   <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Starts</th>
                   <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Ends</th>
@@ -1010,14 +1011,18 @@ export default function SetupClient({
         </p>
       </div>
 
-      {/* Which shifts each register runs, per period */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      {/* Which shifts each register and prep position runs, per period */}
+      {SECTIONS_WITH_PERIOD_SHIFTS.map(section => (
+      <div key={section} className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
           <div>
-            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">Register Shifts by Week</h2>
+            <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+              {section === 'Registers' ? 'Register' : 'Prep'} Shifts by Week
+            </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              One person per till at a time. A register can be the midday till one week and a
-              normal AM/PM till the next. Tick nothing to close that till for the period.
+              {section === 'Registers'
+                ? 'One person per till at a time. A register can be the midday till one week and a normal AM/PM till the next. Tick nothing to close that till for the period.'
+                : 'An AM prepper hands over to a PM one. A fourth prepper only comes in for the busy weeks — tick nothing to close that position for the period.'}
             </p>
           </div>
           <button
@@ -1025,7 +1030,7 @@ export default function SetupClient({
             disabled={pending}
             className="px-5 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition shrink-0"
           >
-            {pending ? 'Saving…' : 'Save Register Shifts'}
+            {pending ? 'Saving…' : `Save ${section === 'Registers' ? 'Register' : 'Prep'} Shifts`}
           </button>
         </div>
 
@@ -1033,7 +1038,7 @@ export default function SetupClient({
           <table className="w-full min-w-[620px]">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2">Register</th>
+                <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2">Position</th>
                 {PERIODS.map(p => (
                   <th key={p.id} className="text-center text-xs font-semibold text-gray-400 px-3 py-2">
                     {p.label}
@@ -1042,7 +1047,7 @@ export default function SetupClient({
               </tr>
             </thead>
             <tbody>
-              {FOOD_VILLAGE_POSITIONS.filter(p => p.section === 'Registers').map(pos => (
+              {periodShiftPositions.filter(p => p.section === section).map(pos => (
                 <tr key={pos.id} className="border-t border-gray-50">
                   <td className="px-4 py-2">
                     <span className="text-sm font-medium text-gray-900">{pos.label}</span>
@@ -1078,8 +1083,12 @@ export default function SetupClient({
           </table>
         </div>
       </div>
+      ))}
 
-      {/* Optional positions */}
+      {/* Optional positions. Empty now that Register 4 and Prep 4 are set by
+          their shifts; kept for any position added later that needs a plain
+          on/off switch rather than a shift pattern. */}
+      {OPTIONAL_POSITIONS.length > 0 && (
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
           <div>
@@ -1126,6 +1135,7 @@ export default function SetupClient({
           ))}
         </div>
       </div>
+      )}
     </div>
   )
 }
