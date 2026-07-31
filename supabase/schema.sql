@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS shift_templates (
   -- Section a position belongs to. NULL is the default any position without
   -- its own times uses; 'Kitchen' opens earlier than the stand.
   section text,
+  -- A single position these times apply to, overriding its section. Registers
+  -- share a section but open at different times.
+  position text,
   slot_order int NOT NULL CHECK (slot_order IN (1, 2, 3)),
   start_time time NOT NULL,
   end_time time,
@@ -63,7 +66,10 @@ CREATE TABLE IF NOT EXISTS shift_templates (
 CREATE UNIQUE INDEX IF NOT EXISTS shift_templates_default_key
   ON shift_templates (year, location, slot_order) WHERE section IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS shift_templates_section_key
-  ON shift_templates (year, location, section, slot_order) WHERE section IS NOT NULL;
+  ON shift_templates (year, location, section, slot_order)
+  WHERE section IS NOT NULL AND position IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS shift_templates_position_key
+  ON shift_templates (year, location, position, slot_order) WHERE position IS NOT NULL;
 
 -- Employees
 -- skills lists the positions a person can actually work; Register, Prep, Chef

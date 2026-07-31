@@ -56,10 +56,15 @@ export async function autoSchedulePeriod(
    * three templates against the day's hours; the Stadium splits its hours,
    * giving one shift on a short or open-ended day and two on a long one.
    */
-  function shiftsFor(location: Location, date: string, section: string | null = null) {
+  function shiftsFor(
+    location: Location,
+    date: string,
+    section: string | null = null,
+    position: Position | null = null
+  ) {
     const h = getHoursForDate(hoursMap, location, date, settings!)
     if (!h) return []
-    return shiftsForDay(location, h, templates, section)
+    return shiftsForDay(location, h, templates, section, position)
   }
 
   // Per-date overrides. Absent means "use the employee's weekly pattern".
@@ -167,7 +172,7 @@ export async function autoSchedulePeriod(
       for (const pos of fvPositions) {
         // Each position takes its section's times — the kitchen opens earlier
         // than the registers, so its AM is a different shift entirely.
-        const posShifts = shiftsFor('food_village', date, sectionForPosition(pos.id))
+        const posShifts = shiftsFor('food_village', date, sectionForPosition(pos.id), pos.id)
         const fv = posShifts.find(s => shiftPeriodFor('food_village', s.slot_order) === period)
         if (!fv) continue
         // Not every position runs every shift — the kitchen has no mid.

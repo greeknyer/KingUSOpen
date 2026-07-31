@@ -4,7 +4,8 @@ import { useState, useTransition } from 'react'
 import {
   TournamentSettings, OperatingHours, OptionalPositionConfig, Location, ShiftTemplate, Employee,
   DEFAULT_HOURS, DEFAULT_SHIFT_TEMPLATES, HANDOFF_MIN_HOURS, formatTime, hoursKey,
-  OPTIONAL_POSITIONS, DEFAULT_KITCHEN_TEMPLATES,
+  OPTIONAL_POSITIONS, DEFAULT_KITCHEN_TEMPLATES, DEFAULT_REGISTER_TEMPLATES,
+  DEFAULT_POSITION_TEMPLATES, FOOD_VILLAGE_POSITIONS, positionRunsSlot, Position,
   shiftsForDay, shiftLabel,
 } from '@/lib/types'
 import {
@@ -179,6 +180,49 @@ export default function SetupClient({
     buildTemplates(null, DEFAULT_SHIFT_TEMPLATES.stadium, 'stadium')
   )
 
+  /**
+   * Each register's own times. They share a section but open at different
+   * times, so every register is listed separately with only the shifts it runs.
+   */
+  type RegisterRow = { position: Position; slot_order: number; start_time: string; end_time: string }
+  const [registerRows, setRegisterRows] = useState<RegisterRow[]>(() => {
+    const saved = new Map(
+      shiftTemplates
+        .filter(t => t.location === 'food_village' && t.position)
+        .map(t => [`${t.position}:${t.slot_order}`, t])
+    )
+    const sectionSaved = new Map(
+      shiftTemplates
+        .filter(t => t.location === 'food_village' && !t.position && t.section === 'Registers')
+        .map(t => [t.slot_order, t])
+    )
+    const rows: RegisterRow[] = []
+    for (const pos of FOOD_VILLAGE_POSITIONS.filter(p => p.section === 'Registers')) {
+      for (const slot of [1, 2, 3]) {
+        if (!positionRunsSlot('food_village', pos.id, slot)) continue
+        const own = saved.get(`${pos.id}:${slot}`)
+        const sec = sectionSaved.get(slot)
+        const dflt =
+          DEFAULT_POSITION_TEMPLATES.find(d => d.position === pos.id && d.slot_order === slot) ??
+          DEFAULT_REGISTER_TEMPLATES.find(d => d.slot_order === slot)
+        const src = own ?? sec
+        rows.push({
+          position: pos.id,
+          slot_order: slot,
+          start_time: src ? (src.start_time?.slice(0, 5) ?? '') : (dflt?.start_time ?? ''),
+          end_time: src ? (src.end_time?.slice(0, 5) ?? '') : (dflt?.end_time ?? ''),
+        })
+      }
+    }
+    return rows
+  })
+
+  function updateRegister(position: Position, slot: number, patch: Partial<RegisterRow>) {
+    setRegisterRows(prev =>
+      prev.map(r => (r.position === position && r.slot_order === slot ? { ...r, ...patch } : r))
+    )
+  }
+
   function updateTemplate(slotOrder: number, patch: Partial<EditableTemplate>) {
     setFvTemplates(prev =>
       prev.map(t => (t.slot_order === slotOrder ? { ...t, ...patch } : t))
@@ -206,6 +250,7 @@ export default function SetupClient({
           ...fvTemplates.map(t => ({
             location: 'food_village',
             section: null as string | null,
+            position: null as string | null,
             slot_order: t.slot_order,
             start_time: t.start_time,
             end_time: t.end_time || null,
@@ -213,6 +258,7 @@ export default function SetupClient({
           ...kitchenTemplates.map(t => ({
             location: 'food_village',
             section: 'Kitchen' as string | null,
+            position: null as string | null,
             slot_order: t.slot_order,
             start_time: t.start_time,
             end_time: t.end_time || null,
@@ -220,9 +266,18 @@ export default function SetupClient({
           ...stadiumTemplates.map(t => ({
             location: 'stadium',
             section: null as string | null,
+            position: null as string | null,
             slot_order: t.slot_order,
             start_time: t.start_time,
             end_time: t.end_time || null,
+          })),
+          ...registerRows.map(r => ({
+            location: 'food_village',
+            section: 'Registers' as string | null,
+            position: r.position as string | null,
+            slot_order: r.slot_order,
+            start_time: r.start_time,
+            end_time: r.end_time || null,
           })),
         ]
       )
@@ -237,6 +292,7 @@ export default function SetupClient({
     year,
     location: 'food_village' as Location,
     section: null,
+    position: null,
     slot_order: t.slot_order,
     start_time: t.start_time,
     end_time: t.end_time || null,
@@ -721,6 +777,59 @@ export default function SetupClient({
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="mt-5">
+          <div className="text-sm font-bold text-gray-900 mb-1">Registers</div>
+          <p className="text-xs text-gray-400 mb-2">
+            One person per till at a time. Registers open at different times, so each is
+            listed separately — the noon till is a MID shift, not a second person on a
+            till that is already staffed.
+          </p>
+          <div className="border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full min-w-[520px]">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left text-xs font-semibold text-gray-400 px-4 py-2">Register</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2 w-20">Shift</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Starts</th>
+                  <th className="text-left text-xs font-semibold text-gray-400 px-3 py-2">Ends</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registerRows.map(r => (
+                  <tr key={`${r.position}:${r.slot_order}`} className="border-t border-gray-50">
+                    <td className="px-4 py-2">
+                      <span className="text-sm font-medium text-gray-900">
+                        {FOOD_VILLAGE_POSITIONS.find(p => p.id === r.position)?.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="text-xs font-semibold text-gray-500">
+                        {shiftLabel('food_village', r.slot_order)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="time"
+                        value={r.start_time}
+                        onChange={e => updateRegister(r.position, r.slot_order, { start_time: e.target.value })}
+                        className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="time"
+                        value={r.end_time}
+                        onChange={e => updateRegister(r.position, r.slot_order, { end_time: e.target.value })}
+                        className="border border-gray-200 rounded-lg px-3 py-2.5 min-h-[44px] w-36 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="mt-5">

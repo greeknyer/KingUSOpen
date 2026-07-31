@@ -109,13 +109,15 @@ export interface ShiftTemplate {
   location: Location
   /** Section these times apply to. null = the default for any section. */
   section: string | null
+  /** A single position these times apply to, overriding its section. */
+  position: Position | null
   slot_order: number         // 1, 2 or 3
   start_time: string         // HH:MM
   end_time: string | null    // HH:MM, or null = runs to that day's close
 }
 
 /** Sections that keep their own shift times, separate from the default. */
-export const SECTIONS_WITH_OWN_TIMES = ['Kitchen'] as const
+export const SECTIONS_WITH_OWN_TIMES = ['Kitchen', 'Registers'] as const
 
 export const DEFAULT_KITCHEN_TEMPLATES: {
   slot_order: number; start_time: string; end_time: string | null
@@ -123,6 +125,26 @@ export const DEFAULT_KITCHEN_TEMPLATES: {
   // The kitchen is in before the stand opens so food is ready for the doors.
   { slot_order: 1, start_time: '07:00', end_time: '16:00' },
   { slot_order: 3, start_time: '16:00', end_time: null },
+]
+
+/**
+ * Registers are one person at a time, handing over once at 5pm. What differs
+ * between them is when each till opens — a register that opens at noon is the
+ * MID shift, not a second person on a till that is already staffed.
+ */
+export const DEFAULT_REGISTER_TEMPLATES: {
+  slot_order: number; start_time: string; end_time: string | null
+}[] = [
+  { slot_order: 1, start_time: '10:00', end_time: '17:00' }, // AM, hands over at 5
+  { slot_order: 2, start_time: '12:00', end_time: '20:00' }, // MID, the noon till
+  { slot_order: 3, start_time: '17:00', end_time: null },    // PM, through to close
+]
+
+/** Registers that open later than their section's AM start. */
+export const DEFAULT_POSITION_TEMPLATES: {
+  position: Position; slot_order: number; start_time: string; end_time: string | null
+}[] = [
+  { position: 'register_3', slot_order: 1, start_time: '11:00', end_time: '17:00' },
 ]
 
 /** The section a position belongs to, or null if it uses the default times. */
@@ -230,10 +252,13 @@ type PositionMeta = {
 }
 
 export const FOOD_VILLAGE_POSITIONS: PositionMeta[] = [
-  { id: 'register_1', label: 'Register 1', section: 'Registers' },
-  { id: 'register_2', label: 'Register 2', section: 'Registers' },
-  { id: 'register_3', label: 'Register 3', section: 'Registers' },
-  { id: 'register_4', label: 'Register 4', section: 'Registers', configurable: true },
+  // One person per till at a time, handing over once. Registers 1 and 2 open
+  // with the stand, 3 opens an hour later, and 4 is a single midday shift —
+  // which is why it runs MID rather than an AM/PM pair.
+  { id: 'register_1', label: 'Register 1', section: 'Registers', shifts: ['am', 'pm'] },
+  { id: 'register_2', label: 'Register 2', section: 'Registers', shifts: ['am', 'pm'] },
+  { id: 'register_3', label: 'Register 3', section: 'Registers', shifts: ['am', 'pm'] },
+  { id: 'register_4', label: 'Register 4', section: 'Registers', shifts: ['mid'], configurable: true },
   // Prep runs open and close only, no mid: an AM prepper hands to a PM one.
   { id: 'prep_1', label: 'Prep 1', section: 'Prep', shifts: ['am', 'pm'] },
   { id: 'prep_2', label: 'Prep 2', section: 'Prep', shifts: ['am', 'pm'] },
@@ -556,42 +581,72 @@ export function shiftsForDay(
   location: Location,
   hours: OperatingHours | null,
   templates: ShiftTemplate[],
-  section: string | null = null
+  section: string | null = null,
+  position: Position | null = null
 ): DayShift[] {
   if (!hours || !hours.is_open || !hours.open_time) return []
 
-  // A section with its own times uses them; everything else uses the default.
-  const own = section
-    ? templates.filter(t => t.location === location && t.section === section)
+  // Most specific wins: a position's own times, else its section's, else the
+  // default. Registers share a section but open at different times, so the
+  // position level is what lets one till open an hour after its neighbours.
+  const forPosition = position
+    ? templates.filter(t => t.location === location && t.position === position)
     : []
-  const usingOwnTimes = own.length > 0
-  const relevant = (usingOwnTimes
-    ? own
-    : templates.filter(t => t.location === location && !t.section)
-  ).sort((a, b) => a.slot_order - b.slot_order)
+  const forSection = section
+    ? templates.filter(t => t.location === location && !t.position && t.section === section)
+    : []
+  const forDefault = templates.filter(
+    t => t.location === location && !t.position && !t.section
+  )
+
+  // Overrides are per-slot, so a slot they don't cover falls back a level.
+  const bySlot = new Map<number, ShiftTemplate>()
+  for (const row of [...forDefault, ...forSection, ...forPosition]) {
+    bySlot.set(row.slot_order, row)
+  }
+  const usingOwnTimes = forPosition.length > 0 || forSection.length > 0
+  const relevant = [...bySlot.values()].sort((a, b) => a.slot_order - b.slot_order)
 
   if (relevant.length === 0) {
     // The Stadium has no templates by design and splits its own hours. The Food
     // Village does have them, so an empty set means they are missing rather
     // than absent — fall back to the defaults instead of splitting the day,
     // which would silently drop the mid shift from the registers.
-    const fallback = section === 'Kitchen'
-      ? DEFAULT_KITCHEN_TEMPLATES
+    const base =
+      section === 'Kitchen' ? DEFAULT_KITCHEN_TEMPLATES
+      : section === 'Registers' ? DEFAULT_REGISTER_TEMPLATES
       : DEFAULT_SHIFT_TEMPLATES[location]
-    if (fallback.length > 0) {
+    const overrides = position
+      ? DEFAULT_POSITION_TEMPLATES.filter(d => d.position === position)
+      : []
+    if (base.length > 0) {
       return shiftsForDay(
         location,
         hours,
-        fallback.map((f, i) => ({
-          id: `fallback-${i}`,
-          year: 0,
-          location,
-          section: section ?? null,
-          slot_order: f.slot_order,
-          start_time: f.start_time,
-          end_time: f.end_time,
-        })),
-        section
+        [
+          ...base.map((f, i) => ({
+            id: `fallback-${i}`,
+            year: 0,
+            location,
+            section: section ?? null,
+            position: null,
+            slot_order: f.slot_order,
+            start_time: f.start_time,
+            end_time: f.end_time,
+          })),
+          ...overrides.map((f, i) => ({
+            id: `fallback-pos-${i}`,
+            year: 0,
+            location,
+            section: section ?? null,
+            position: f.position,
+            slot_order: f.slot_order,
+            start_time: f.start_time,
+            end_time: f.end_time,
+          })),
+        ],
+        section,
+        position
       )
     }
     return planShifts(hours.open_time, hours.close_time).map((s, i) => ({

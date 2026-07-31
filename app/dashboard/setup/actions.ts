@@ -125,7 +125,7 @@ export async function saveOptionalPositions(
 
 export async function saveShiftTemplates(
   year: number,
-  templates: { location: string; section: string | null; slot_order: number; start_time: string; end_time: string | null }[]
+  templates: { location: string; section: string | null; position: string | null; slot_order: number; start_time: string; end_time: string | null }[]
 ): Promise<SaveResult> {
   const result = await replaceYear('shift_templates', year,
     templates.map(t => ({

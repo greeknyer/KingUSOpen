@@ -25,6 +25,7 @@ one is harmless.
 | `011_prep4_config` | Prep 4 back, switchable per period like Register 4 |
 | `012_kitchen_shift_times` | the kitchen's own earlier shift times |
 | `013_stadium_shift_times` | a set handover time for the Stadium |
+| `014_register_times` | one person per register, staggered opening times |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -86,16 +87,21 @@ each. Everything counts from the Week 1 start date.
 
 The Food Village runs three overlapping shifts every open day:
 
-| Shift | Typical time | Role |
-|---|---|---|
-| **AM** | 10am → 4pm | openers, hand off to PM |
-| **MID** | 12pm → Close | overlaps both |
-| **PM** | 4pm → Close | closers |
+Every position is one person at a time. What differs is when each opens and
+when it hands over:
 
-Two people cover each position from noon, which is what staffs all four
-registers through the peak. The times are editable in Tournament Setup and are
-clamped to each day's real hours, so a day opening late shifts the openers
-forward rather than scheduling someone before the doors open.
+| | Opens | Hands over | Runs to |
+|---|---|---|---|
+| Register 1, 2 | 10am | 5pm | close |
+| Register 3 | 11am | 5pm | close |
+| Register 4 | 12pm | — | 8pm (single MID shift) |
+| Prep 1–4 | 10am | 4pm | close |
+| Chef, Salads | 7am | 4pm | close |
+
+A register that opens at noon is the **MID** shift — that is what mid means
+here, not a second person on a till that is already staffed. Times are editable
+in Tournament Setup and clamped to each day's real hours, so a day opening late
+moves its opening shift forward.
 
 Prep and the kitchen run AM and PM only — no mid. The kitchen also keeps its
 own times, opening at 7am so food is ready for the doors, and stays at 7am even
