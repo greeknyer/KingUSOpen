@@ -5,7 +5,8 @@ import { revalidatePath } from 'next/cache'
 import {
   Employee, FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, TournamentSettings,
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
-  ShiftTemplate, shiftsForDay, canWork, canWorkLocation, canWorkShiftOn, Position,
+  ShiftTemplate, shiftsForDay, canWork, canWorkLocation, Position,
+  Availability, availableShiftsOn, shiftPeriodFor,
 } from '@/lib/types'
 
 export async function autoSchedulePeriod(
@@ -39,6 +40,9 @@ export async function autoSchedulePeriod(
   const settings: TournamentSettings | undefined = settingsRows?.[0]
   if (!settings) return { count: 0, unfilled: 0 }
 
+  // Non-null past the guard above; named so the closures below don't re-narrow.
+  const staff: Employee[] = employees
+
   const hoursMap = buildHoursMap((hoursRows ?? []) as OperatingHours[])
 
   const templates = (templateRows ?? []) as ShiftTemplate[]
@@ -54,28 +58,28 @@ export async function autoSchedulePeriod(
     return shiftsForDay(location, h, templates)
   }
 
-  // Build availability map: default = available
-  const availMap = new Map<string, boolean>()
-  avails?.forEach(a => availMap.set(`${a.employee_id}:${a.date}`, a.available))
+  // Per-date overrides. Absent means "use the employee's weekly pattern".
+  const availMap = new Map<string, Availability>()
+  ;(avails ?? []).forEach((a: Availability) =>
+    availMap.set(`${a.employee_id}:${a.date}`, a)
+  )
 
   /**
-    * Availability is tri-state. An explicit row is a deliberate exception the
-    * manager made on the Availability screen, so it beats the standing weekly
-    * pattern in both directions — marking someone on for a Saturday they
-    * normally never work has to actually schedule them, or the override would
-    * silently do nothing.
-    */
-  function availabilityFor(empId: string, date: string): 'on' | 'off' | 'default' {
-    const key = `${empId}:${date}`
-    if (!availMap.has(key)) return 'default'
-    return availMap.get(key)! ? 'on' : 'off'
+   * The shifts someone can actually work on a date — their standing weekly
+   * pattern unless an override for that date says otherwise. Shared with the
+   * Availability grid so the two can't disagree about who is on.
+   */
+  function shiftsAvailable(e: Employee, date: string) {
+    return availableShiftsOn(e, date, availMap.get(`${e.id}:${date}`))
   }
 
+  /** Working at all that date, whatever the shift. */
   function isAvail(empId: string, date: string): boolean {
-    return availabilityFor(empId, date) !== 'off'
+    const e = staff.find((x: Employee) => x.id === empId)
+    return e ? shiftsAvailable(e, date).length > 0 : false
   }
 
-  /** Skill and location always apply; the weekly pattern yields to an override. */
+  /** Skill and location are standing facts; the shift comes from the date. */
   function eligibleFor(
     e: Employee,
     position: Position,
@@ -85,8 +89,7 @@ export async function autoSchedulePeriod(
   ): boolean {
     if (!canWork(e, position)) return false
     if (!canWorkLocation(e, location)) return false
-    if (availabilityFor(e.id, date) === 'on') return true
-    return canWorkShiftOn(e, date, location, slotOrder)
+    return shiftsAvailable(e, date).includes(shiftPeriodFor(location, slotOrder))
   }
 
   // Track hours assigned per employee (for fair distribution). Named apart from

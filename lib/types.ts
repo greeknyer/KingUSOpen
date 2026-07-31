@@ -147,6 +147,8 @@ export interface Availability {
   employee_id: string
   date: string
   available: boolean
+  /** Which shifts on this date. [] = off. null = whatever the pattern allows. */
+  shifts: ShiftPeriod[] | null
   notes: string | null
 }
 
@@ -262,6 +264,23 @@ export function patternShiftsOn(employee: Employee, date: string): ShiftPeriod[]
 /** Whether the standing pattern has them working at all on this date. */
 export function patternAvailableOn(employee: Employee, date: string): boolean {
   return patternShiftsOn(employee, date).length > 0
+}
+
+/**
+ * The shifts an employee can actually work on a date: their standing weekly
+ * pattern, unless an override row for that date says otherwise. This is the
+ * single answer both the Availability grid and the scheduler read, so the two
+ * can't drift apart.
+ */
+export function availableShiftsOn(
+  employee: Employee,
+  date: string,
+  override?: Availability
+): ShiftPeriod[] {
+  if (!override) return patternShiftsOn(employee, date)
+  // shifts is authoritative when set; otherwise fall back to the boolean.
+  if (override.shifts) return override.shifts
+  return override.available ? patternShiftsOn(employee, date) : []
 }
 
 /** Every standing constraint at once: skill, location, and the weekly pattern. */

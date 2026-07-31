@@ -19,20 +19,44 @@ function toResult(error: { message: string; code?: string } | null): SaveResult 
 }
 
 /**
- * Records an explicit availability row for one date. The grid derives its
- * default from the employee's weekly pattern, so a row only needs to exist
- * where a specific date departs from it.
+ * Records which shifts an employee can work on one specific date, overriding
+ * their standing weekly pattern. An empty list means off entirely. The grid
+ * derives everything else from the pattern, so a row only needs to exist where
+ * a date genuinely departs from it.
+ *
+ * `available` is kept in step with `shifts` so anything still reading the older
+ * boolean column stays correct.
  */
-export async function toggleAvailability(
+export async function setAvailabilityShifts(
   employeeId: string,
   date: string,
-  currentlyAvailable: boolean
+  shifts: string[]
 ): Promise<SaveResult> {
   const supabase = await createClient()
+  const valid = new Set(['am', 'mid', 'pm'])
+  const clean = shifts.filter(s => valid.has(s))
+
   const { error } = await supabase.from('availability').upsert(
-    { employee_id: employeeId, date, available: !currentlyAvailable },
+    { employee_id: employeeId, date, shifts: clean, available: clean.length > 0 },
     { onConflict: 'employee_id,date' }
   )
+  if (error) return toResult(error)
+  revalidatePath('/dashboard/availability')
+  revalidatePath('/dashboard/schedule')
+  return { ok: true }
+}
+
+/** Removes the override for one date so it falls back to the weekly pattern. */
+export async function resetAvailability(
+  employeeId: string,
+  date: string
+): Promise<SaveResult> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('availability')
+    .delete()
+    .eq('employee_id', employeeId)
+    .eq('date', date)
   if (error) return toResult(error)
   revalidatePath('/dashboard/availability')
   revalidatePath('/dashboard/schedule')

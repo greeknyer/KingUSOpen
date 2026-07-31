@@ -91,11 +91,16 @@ CREATE INDEX IF NOT EXISTS idx_employees_skills ON employees USING gin (skills);
 CREATE INDEX IF NOT EXISTS idx_employees_locations ON employees USING gin (locations);
 
 -- Availability (per employee per date)
+-- A row here is an EXCEPTION to the employee's standing weekly_availability
+-- pattern, not the whole story. shifts says which shifts are workable on this
+-- specific date: '{}' = off entirely, '{pm}' = PM only. NULL means available
+-- for whatever the pattern already allows. No row at all = use the pattern.
 CREATE TABLE IF NOT EXISTS availability (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_id uuid NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
   date date NOT NULL,
   available boolean NOT NULL DEFAULT true,
+  shifts text[] CHECK (shifts IS NULL OR shifts <@ ARRAY['am', 'mid', 'pm']::text[]),
   notes text,
   UNIQUE (employee_id, date)
 );
