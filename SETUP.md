@@ -29,6 +29,7 @@ one is harmless.
 | `015_register_period_shifts` | which shifts each register runs, per week |
 | `016_guaranteed_days` | agreed days per week for returning staff |
 | `017_prep_period_shifts` | which shifts each prep position runs, per week |
+| `018_stadium_mid_register` | the Stadium register as a single midday shift |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -120,17 +121,21 @@ Prep and the kitchen run AM and PM only — no mid. The kitchen also keeps its
 own times, opening at 7am so food is ready for the doors, and stays at 7am even
 on a day the stand opens late.
 
-The Stadium runs AM and PM with its own handover time. Every set of times is
-clamped to the day it runs on, so a day opening late starts late, and a day too
-short or running to an unknown close collapses to a single shift — a
-6pm-to-close evening stays one shift rather than being split.
+At the Stadium, **Prep** opens and closes with its own handover time, while the
+**Register** is a single MID shift — one person on the till, no handover. It is
+seeded to run the whole of the day's hours, so on a long day that is a long
+shift; set the real window in **Tournament Setup → Shift Times → Stadium**.
+
+Every set of times is clamped to the day it runs on, so a day opening late
+starts late, and a day too short or running to an unknown close collapses to a
+single shift — a 6pm-to-close evening stays one shift rather than being split.
 
 ### Positions
 
 **Food Village (10)** — Register 1–4, Prep 1–4, Chef, Salads. Every register and
 prep position is set per week, so Register 4 and Prep 4 run only the weeks you
 give them shifts.
-**Stadium (2)** — Register, Prep.
+**Stadium (2)** — Register (a single MID shift), Prep (AM and PM).
 
 Each position requires a matching skill, so Auto-Schedule only places people
 qualified for it.
@@ -160,7 +165,8 @@ a full day for one date.
 - **General Manager** — runs Food Village from **outside** the position grid, so
   all nine positions still need staffing. Shown as a banner on the schedule.
 - **Stadium Manager** — fixed at the Stadium for the tournament, floats between
-  Register and Prep, works open to close.
+  Register and Prep, works open to close. Give them **no positions** and they
+  supervise instead, sitting outside the grid like the GM.
 - Anyone else with the manager flag is scheduled normally.
 
 ### How Auto-Schedule decides

@@ -36,11 +36,15 @@ export const SHIFT_PERIODS: { id: ShiftPeriod; label: string }[] = [
 ]
 
 /**
- * Which named shift a slot represents. Food Village runs all three; the Stadium
- * runs at most two, so its second slot is the PM shift rather than the mid.
+ * Which named shift a slot represents. Slot 1 opens, 2 is the mid, 3 closes.
+ *
+ * The Stadium used to read its slot 2 as PM, on the basis that it ran only two
+ * shifts. That made a single midday shift impossible to express there — the
+ * Stadium register is one person for one shift, which is exactly what MID means
+ * everywhere else in the app. Both locations now number their slots the same
+ * way, and a location simply doesn't run the slots it has no times for.
  */
-export function shiftPeriodFor(location: Location, slotOrder: number): ShiftPeriod {
-  if (location === 'stadium') return slotOrder === 1 ? 'am' : 'pm'
+export function shiftPeriodFor(_location: Location, slotOrder: number): ShiftPeriod {
   return slotOrder === 1 ? 'am' : slotOrder === 2 ? 'mid' : 'pm'
 }
 
@@ -182,16 +186,21 @@ export const DEFAULT_SHIFT_TEMPLATES: Record<
   // The Stadium hands over at a set time too. Deriving it from each day's
   // hours instead put the handover at the middle of the day, which drifted
   // with the closing time and produced times like 4:45pm.
+  //
+  // Its MID is one person for the whole of a day, which is what the register
+  // there runs — a single shift with no handover, clamped to the day's real
+  // hours so an evening-only day is covered from opening rather than from 10am.
   stadium: [
     { slot_order: 1, start_time: '10:00', end_time: '17:00' },
-    { slot_order: 2, start_time: '17:00', end_time: null },
+    { slot_order: 2, start_time: '10:00', end_time: null },
+    { slot_order: 3, start_time: '17:00', end_time: null },
   ],
 }
 
 /** How many slot rows each location's grid shows. */
 export const SLOTS_PER_LOCATION: Record<Location, number> = {
   food_village: 3,
-  stadium: 2,
+  stadium: 3,
 }
 
 /** How a position is run in one period. */
@@ -333,8 +342,11 @@ export const FOOD_VILLAGE_POSITIONS: PositionMeta[] = [
 ]
 
 export const STADIUM_POSITIONS: PositionMeta[] = [
-  { id: 'stadium_register', label: 'Register' },
-  { id: 'stadium_prep', label: 'Prep' },
+  // One person on the till for a single shift, with no handover — the same
+  // thing MID means at Food Village.
+  { id: 'stadium_register', label: 'Register', shifts: ['mid'] },
+  // Prep opens and closes, handing over once.
+  { id: 'stadium_prep', label: 'Prep', shifts: ['am', 'pm'] },
 ]
 
 const ALL_POSITIONS: PositionMeta[] = [...FOOD_VILLAGE_POSITIONS, ...STADIUM_POSITIONS]

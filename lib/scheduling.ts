@@ -201,7 +201,11 @@ export function fillDay(ctx: FillDayContext): DayResult {
 
   function assignFullDay(e: Employee, location: Location, position: Position) {
     const w = ctx.fullDayWindow(location)
-    place(e, location, position, 1, w.start, w.end, true)
+    // Recorded against a slot the position actually runs. Hardcoding slot 1
+    // hid the assignment for a position that runs only the mid — the Stadium
+    // register — because the grid draws no row 1 for it.
+    const slot = ctx.slots.find(s => s.location === location && s.position === position)
+    place(e, location, position, slot?.slotOrder ?? 1, w.start, w.end, true)
   }
 
   /**
