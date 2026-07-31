@@ -189,14 +189,47 @@ export async function autoSchedulePeriod(
       )
     }
 
-    for (const slot of slots) {
-      // The Stadium manager works their position open to close, so no other
-      // slot of that position needs filling.
-      if (slot.location === 'stadium' && managerCovers.has(slot.position)) continue
+    // Coverage decides WHICH slots get staffed; fairness decides WHO fills
+    // them. Both passes are needed because the two goals pull apart.
+    //
+    // Pass 1 walks the slots in coverage order — every position's opening
+    // shift before anyone's handoff — consuming one eligible person per slot
+    // to work out how many are actually staffable today.
+    const openSlots = slots.filter(
+      s => !(s.location === 'stadium' && managerCovers.has(s.position))
+    )
+    const unclaimed = new Set(availableEmps.map((e: Employee) => e.id))
+    const staffable: typeof openSlots = []
+    for (const slot of openSlots) {
+      const candidate = availableEmps.find(
+        (e: Employee) =>
+          unclaimed.has(e.id) &&
+          isEligible(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
+          underCap(e)
+      )
+      if (!candidate) continue
+      unclaimed.delete(candidate.id)
+      staffable.push(slot)
+    }
 
-      // Re-sort each time so the employee with the fewest hours so far goes
-      // next. Only people qualified for the position are eligible; Chef
-      // prefers a manager among those who can actually cook it.
+    // Slots pass 1 could not staff at all — nobody eligible left, or everyone
+    // who was is already at their weekly cap.
+    unfilled += openSlots.length - staffable.length
+
+    // Pass 2 hands the longest shifts to whoever has the fewest hours so far.
+    // Assigning in coverage order instead would be self-reinforcing: the
+    // opening shift is the SHORT one, so the least-worked people would keep
+    // landing on it and stay least-worked, while whoever got pushed onto the
+    // long mid shift would keep getting it. That produced a 44-hour spread
+    // across an otherwise identical crew.
+    const byLongestFirst = [...staffable].sort(
+      (a, b) => shiftLengthHours(b.start, b.end) - shiftLengthHours(a.start, a.end)
+    )
+
+    for (const slot of byLongestFirst) {
+
+      // Fewest hours so far goes next. Only people qualified for the position
+      // are eligible; Chef prefers a manager among those who can actually cook.
       const sortByHours = (a: Employee, b: Employee) =>
         (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
 
