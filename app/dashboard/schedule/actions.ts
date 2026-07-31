@@ -7,6 +7,7 @@ import {
   OperatingHours, Location, buildHoursMap, getHoursForDate, shiftLengthHours,
   ShiftTemplate, shiftsForDay, canWork, canWorkOn, canWorkLocation, Position,
   Availability, availableShiftsOn, worksFullDayOn, shiftPeriodFor, positionRunsSlot,
+  ShiftPeriod,
 } from '@/lib/types'
 
 export async function autoSchedulePeriod(
@@ -151,14 +152,16 @@ export async function autoSchedulePeriod(
       end: string | null
     }
     const slots: Slot[] = []
-    const maxShifts = Math.max(fvShifts.length, stadiumShifts.length)
 
-    // `s` is the ordering rank, not the slot number: shiftsForDay drops a
-    // template that falls outside a day's hours, so a day opening at 5pm
-    // returns shifts #2 and #3 with nothing at index 0's usual #1. Carry each
-    // shift's own slot_order through, or assignments land in the wrong row.
-    for (let s = 0; s < maxShifts; s++) {
-      const fv = fvShifts[s]
+    // Operational priority, not clock order or shift length. A stand has to
+    // open and it has to close, so AM and PM are the shifts that must be
+    // covered; MID is the overlap that helps at peak and is the right thing to
+    // lose when staff runs short. Building the list in this order means pass 1
+    // drops mids rather than leaving a position with nobody to open it.
+    const SHIFT_PRIORITY: ShiftPeriod[] = ['am', 'pm', 'mid']
+
+    for (const period of SHIFT_PRIORITY) {
+      const fv = fvShifts.find(s => shiftPeriodFor('food_village', s.slot_order) === period)
       if (fv) {
         for (const pos of fvPositions) {
           // Not every position runs every shift — the kitchen has no mid.
@@ -173,7 +176,7 @@ export async function autoSchedulePeriod(
           })
         }
       }
-      const st = stadiumShifts[s]
+      const st = stadiumShifts.find(s => shiftPeriodFor('stadium', s.slot_order) === period)
       if (st) {
         for (const pos of STADIUM_POSITIONS) {
           if (!positionRunsSlot('stadium', pos.id, st.slot_order)) continue
@@ -284,6 +287,32 @@ export async function autoSchedulePeriod(
       assignFullDay(e, target.location, target.position, first.start)
     }
 
+    /**
+     * How many of the day's shifts this person could take at a location.
+     *
+     * Someone available only for PM has exactly one way to be used. If a fully
+     * flexible colleague takes that PM slot first, the PM-only person cannot be
+     * placed at all and the shift they could have covered goes empty — which is
+     * how a PM-only prepper ends up missing from a day while AM sits unfilled.
+     * Preferring the most constrained person for each slot keeps the flexible
+     * ones free for the slots only they can still fill.
+     */
+    function shiftOptions(e: Employee, location: Location): number {
+      const dayShifts = location === 'food_village' ? fvShifts : stadiumShifts
+      const avail = shiftsAvailable(e, date)
+      return dayShifts.filter(s => avail.includes(shiftPeriodFor(location, s.slot_order))).length
+    }
+
+    /** Most constrained first, then whoever has worked least. */
+    function pickOrder(location: Location) {
+      return (a: Employee, b: Employee) => {
+        const oa = shiftOptions(a, location)
+        const ob = shiftOptions(b, location)
+        if (oa !== ob) return oa - ob
+        return (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
+      }
+    }
+
     // Coverage decides WHICH slots get staffed; fairness decides WHO fills
     // them. Both passes are needed because the two goals pull apart.
     //
@@ -298,12 +327,14 @@ export async function autoSchedulePeriod(
     )
     const staffable: typeof openSlots = []
     for (const slot of openSlots) {
-      const candidate = availableEmps.find(
-        (e: Employee) =>
-          unclaimed.has(e.id) &&
-          eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
-          underCap(e)
-      )
+      const candidate = [...availableEmps]
+        .sort(pickOrder(slot.location))
+        .find(
+          (e: Employee) =>
+            unclaimed.has(e.id) &&
+            eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
+            underCap(e)
+        )
       if (!candidate) continue
       unclaimed.delete(candidate.id)
       staffable.push(slot)
@@ -327,15 +358,12 @@ export async function autoSchedulePeriod(
 
       // Fewest hours so far goes next. Only people qualified for the position
       // are eligible; Chef prefers a manager among those who can actually cook.
-      const sortByHours = (a: Employee, b: Employee) =>
-        (hoursTally.get(a.id) ?? 0) - (hoursTally.get(b.id) ?? 0)
-
       const eligible = availableEmps
         .filter((e: Employee) =>
           eligibleFor(e, slot.position as Position, slot.location, slot.slotOrder, date) &&
           underCap(e)
         )
-        .sort(sortByHours)
+        .sort(pickOrder(slot.location))
       const pool = slot.isChef
         ? [...eligible.filter(e => e.is_manager), ...eligible.filter(e => !e.is_manager)]
         : [...eligible.filter(e => !e.is_manager), ...eligible.filter(e => e.is_manager)]
