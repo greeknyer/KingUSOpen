@@ -176,18 +176,25 @@ function SlotCell({
           ? assignment.status === 'published'
             ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'
             : 'bg-blue-50 border-blue-100 hover:bg-blue-100'
-          : 'bg-gray-50 border-dashed border-gray-200 hover:bg-gray-100'
+          // An unfilled slot is the thing worth spotting on this screen, so it
+          // reads as a gap rather than as quiet empty space.
+          : 'bg-red-50 border-red-200 hover:bg-red-100'
       }`}
     >
       {assignment && emp ? (
         <div>
-          <div className="font-semibold text-gray-800 truncate">{emp.name}</div>
+          <div className="font-semibold text-gray-800 truncate">
+            {emp.name}
+            {assignment.is_full_day && (
+              <span className="ml-1 text-[9px] font-bold text-blue-600 align-middle">FULL</span>
+            )}
+          </div>
           <div className="text-gray-500 text-[11px]">
             {formatTime(assignment.planned_start)} → {formatTime(assignment.planned_end)}
           </div>
         </div>
       ) : (
-        <span className="text-gray-300">+ Add</span>
+        <span className="text-red-400 font-semibold">+ Add</span>
       )}
     </button>
   )
@@ -243,6 +250,21 @@ export default function ScheduleClient({
   }
 
   /**
+   * A position held open to close by one person. Its later shifts need nobody,
+   * so they render as covered rather than as gaps.
+   */
+  function fullDayHolder(location: Location, date: string, position: string) {
+    return initialAssignments.find(
+      a =>
+        a.date === date &&
+        a.location === location &&
+        a.position === position &&
+        a.is_full_day &&
+        a.employee_id
+    )
+  }
+
+  /**
    * Whether a slot row applies to this date. Shift counts vary by day — the
    * Stadium runs one shift on a short or open-ended day and two on a long one —
    * so a row that has no shift on this date is shown as unavailable rather than
@@ -267,6 +289,36 @@ export default function ScheduleClient({
   }
 
   const hasDraft = initialAssignments.some(a => currentDates.includes(a.date) && a.status === 'draft')
+
+  /**
+   * Slots in this period with nobody in them. Counts only rows that genuinely
+   * need someone — skipping closed days, inactive Register 4, shifts that day
+   * doesn't run, and positions already held by one person all day.
+   */
+  function countUnfilled(location: Location): number {
+    const positions = location === 'food_village' ? FOOD_VILLAGE_POSITIONS : STADIUM_POSITIONS
+    const slotNums = location === 'food_village' ? FV_SLOTS : STADIUM_SLOTS
+    let missing = 0
+    for (const date of currentDates) {
+      if (!isLocationOpen(location, date)) continue
+      for (const pos of positions) {
+        if (pos.id === 'register_4' && !reg4ActiveSet.has(date)) continue
+        const holder = fullDayHolder(location, date, pos.id)
+        for (const slotOrder of slotNums) {
+          if (holder && holder.slot_order !== slotOrder) continue
+          if (!slotApplies(location, date, slotOrder)) continue
+          const filled = getAssignments(date, location, pos.id).some(
+            a => a.slot_order === slotOrder && a.employee_id
+          )
+          if (!filled) missing++
+        }
+      }
+    }
+    return missing
+  }
+
+  const fvUnfilled = countUnfilled('food_village')
+  const stadiumUnfilled = countUnfilled('stadium')
 
   function handleAutoSchedule() {
     setMessage('')
@@ -329,9 +381,11 @@ export default function ScheduleClient({
         </div>
 
         <div className="flex items-center flex-wrap gap-2">
-          <div className="flex items-center gap-3 text-sm text-gray-500 mr-1">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 mr-1">
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-200 inline-block"></span>Draft</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-300 inline-block"></span>Published</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-100 border border-red-200 inline-block"></span>Not filled</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-gray-200 inline-block"></span>Covered all day</span>
           </div>
           <button onClick={handleAutoSchedule} disabled={pending}
             className="px-4 py-2.5 min-h-[44px] bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 active:bg-gray-700 disabled:opacity-50 transition">
@@ -373,6 +427,11 @@ export default function ScheduleClient({
         <div className="px-5 py-3 border-b border-gray-100 bg-amber-50">
           <span className="text-sm font-bold text-amber-900">Food Village</span>
           <span className="text-xs text-amber-600 ml-2">Hours set per day in Tournament Setup</span>
+          {fvUnfilled > 0 && (
+            <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+              {fvUnfilled} not filled
+            </span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
@@ -421,7 +480,24 @@ export default function ScheduleClient({
                             </td>
                           ) : null
                         }
+                        // Held open to close by one person — the later shifts are
+                        // covered, not missing, so they must not read as gaps.
+                        const holder = fullDayHolder('food_village', date, pos.id)
+                        if (holder && holder.slot_order !== slotOrder) {
+                          const who = employees.find(e => e.id === holder.employee_id)
+                          return (
+                            <td key={date} className="px-1 py-1">
+                              <div className="min-h-[44px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center px-1">
+                                <span className="text-[10px] text-gray-400 leading-tight">covered</span>
+                                {who && (
+                                  <span className="text-[9px] text-gray-400 truncate max-w-full">{who.name}</span>
+                                )}
+                              </div>
+                            </td>
+                          )
+                        }
                         // A shift that isn't running this day gets no cell to fill.
+                        
                         if (!slotApplies('food_village', date, slotOrder)) {
                           return (
                             <td key={date} className="px-1 py-1">
@@ -460,6 +536,11 @@ export default function ScheduleClient({
         <div className="px-5 py-3 border-b border-gray-100 bg-blue-50">
           <span className="text-sm font-bold text-blue-900">Stadium</span>
           <span className="text-xs text-blue-600 ml-2">Hours set per day in Tournament Setup</span>
+          {stadiumUnfilled > 0 && (
+            <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+              {stadiumUnfilled} not filled
+            </span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px]">
@@ -504,6 +585,22 @@ export default function ScheduleClient({
                               </div>
                             </td>
                           ) : null
+                        }
+                        // Held open to close by one person — the later shifts are
+                        // covered, not missing, so they must not read as gaps.
+                        const holder = fullDayHolder('stadium', date, pos.id)
+                        if (holder && holder.slot_order !== slotOrder) {
+                          const who = employees.find(e => e.id === holder.employee_id)
+                          return (
+                            <td key={date} className="px-1 py-1">
+                              <div className="min-h-[44px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center px-1">
+                                <span className="text-[10px] text-gray-400 leading-tight">covered</span>
+                                {who && (
+                                  <span className="text-[9px] text-gray-400 truncate max-w-full">{who.name}</span>
+                                )}
+                              </div>
+                            </td>
+                          )
                         }
                         // Short and open-ended Stadium days run a single shift,
                         // so slot #2 has nothing to fill on those dates.

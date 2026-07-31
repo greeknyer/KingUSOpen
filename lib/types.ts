@@ -177,6 +177,8 @@ export interface ScheduleAssignment {
   employee_id: string | null
   planned_start: string | null   // HH:MM
   planned_end: string | null     // HH:MM or null = 'close'
+  /** Holds this position open to close, so its later shifts need nobody. */
+  is_full_day: boolean
   status: 'draft' | 'published'
   employee?: Employee
 }

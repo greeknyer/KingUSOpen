@@ -121,6 +121,9 @@ CREATE TABLE IF NOT EXISTS schedule_assignments (
   employee_id uuid REFERENCES employees(id) ON DELETE SET NULL,
   planned_start time,
   planned_end time,  -- NULL = 'close'
+  -- One person holding this position open to close; the position's later
+  -- shifts then need nobody and the grid shows them as covered, not missing.
+  is_full_day boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
   created_at timestamptz DEFAULT now()
 );

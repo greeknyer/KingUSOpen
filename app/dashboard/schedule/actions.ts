@@ -205,6 +205,7 @@ export async function autoSchedulePeriod(
         employee_id: e.id,
         planned_start: h?.open_time ?? fallback,
         planned_end: h?.close_time ?? null,
+        is_full_day: true,
         status: 'draft',
       })
       assignedToday.add(e.id)
@@ -242,6 +243,23 @@ export async function autoSchedulePeriod(
         : []),
     ]
 
+    /**
+     * Whether someone is free for every shift a location runs that day.
+     *
+     * Working full days is a standing arrangement, but availability is per day:
+     * someone on full days at weekends may only be free for the PM shift midweek.
+     * Handing them open-to-close then both schedules them outside their hours and
+     * locks up the whole position — with only three prep positions, three full-day
+     * preppers is the entire prep crew for the day. They take a normal shift on
+     * those days instead, leaving the position's other shifts for someone else.
+     */
+    function freeAllDay(e: Employee, location: Location): boolean {
+      const dayShifts = location === 'food_village' ? fvShifts : stadiumShifts
+      if (dayShifts.length === 0) return false
+      const avail = shiftsAvailable(e, date)
+      return dayShifts.every(s => avail.includes(shiftPeriodFor(location, s.slot_order)))
+    }
+
     const fullDayStaff = availableEmps
       .filter((e: Employee) => isFullDay(e, date) && !assignedToday.has(e.id) && underCap(e))
       .sort((a: Employee, b: Employee) =>
@@ -253,7 +271,8 @@ export async function autoSchedulePeriod(
         c =>
           !coveredPositions.has(`${c.location}:${c.position}`) &&
           canWork(e, c.position as Position) &&
-          canWorkLocation(e, c.location)
+          canWorkLocation(e, c.location) &&
+          freeAllDay(e, c.location)
       )
       // No free position they can work — they fall through to the normal
       // rotation below rather than being left off the day entirely.
