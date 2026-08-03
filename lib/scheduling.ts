@@ -20,50 +20,6 @@ export function shiftPriorityIndex(location: Location, slotOrder: number): numbe
   return i === -1 ? SHIFT_PRIORITY.length : i
 }
 
-export interface PickContext {
-  /** How many of the day's shifts this person could take at all. */
-  shiftOptions: (e: Employee) => number
-  /** Hours already assigned to them this period. */
-  hours: (e: Employee) => number
-  /** Days still owed against an agreed number; 0 for everyone else. */
-  owed: (e: Employee) => number
-}
-
-/**
- * Who should fill a slot, best first.
- *
- * Anyone still owed days against an agreed number comes first, most owed first.
- * Some staff return every year on a deal for a set number of days, and a deal
- * is precisely not an even share — so it is settled before the even share is
- * worked out. Once someone reaches their number their debt is zero and they
- * join everyone else, ranked on hours like anybody without an arrangement.
- *
- * After that: whoever has worked least.
- *
- * This used to sort by how boxed in someone was BEFORE looking at hours, to
- * stop a flexible colleague taking the only slot a PM-only person could work.
- * As a rule over people it never rebalanced: an open employee lost every slot
- * to a constrained one all week, so the most flexible staff ended up with the
- * least work — 23 hours against 49 in a simulated week.
- *
- * Scarcity is a property of the SLOT, not of the person, and it is handled as
- * one in `orderByScarcity` — the slot with fewest takers is filled while those
- * takers are still free. That protects the PM-only person's slot without
- * granting them standing priority, which leaves hours free to do the balancing.
- *
- * Ties break toward the more constrained person, who has fewer other chances.
- */
-export function pickBest(ctx: PickContext) {
-  return (a: Employee, b: Employee): number => {
-    const oa = ctx.owed(a)
-    const ob = ctx.owed(b)
-    if (oa !== ob) return ob - oa // most owed first
-    const ha = ctx.hours(a)
-    const hb = ctx.hours(b)
-    if (ha !== hb) return ha - hb
-    return ctx.shiftOptions(a) - ctx.shiftOptions(b)
-  }
-}
 
 /**
  * Slots in the order they should be filled: hardest to staff first, without
@@ -88,12 +44,6 @@ export function orderByScarcity(
       return a.i - b.i // stable: keeps the original position order
     })
     .map(x => x.slot)
-}
-
-/** Mean length of a set of shifts, used to decide long versus short. */
-export function meanLength(lengths: number[]): number {
-  if (lengths.length === 0) return 0
-  return lengths.reduce((sum, n) => sum + n, 0) / lengths.length
 }
 
 // ─────────────────────────────────────────────
@@ -276,110 +226,97 @@ export function fillDay(ctx: FillDayContext): DayResult {
     )
   }
 
-  /** How many of the day's shifts someone could take at a location. */
-  function shiftOptions(e: Employee, location: Location): number {
-    const avail = ctx.availableShifts(e)
-    return ctx
-      .locationShifts(location)
-      .filter(s => avail.includes(shiftPeriodFor(location, s.slot_order))).length
-  }
-
-  function pickOrder(location: Location) {
-    return pickBest({
-      shiftOptions: (e: Employee) => shiftOptions(e, location),
-      hours,
-      // A day already placed here counts against the debt, so two people on
-      // deals don't both stay top of the list for the rest of the day.
-      owed: (e: Employee) =>
-        Math.max(0, ctx.daysOwed(e) - (assignedToday.has(e.id) ? 1 : 0)),
-    })
-  }
-
-  // Coverage decides WHICH slots get staffed; fairness decides WHO fills them.
+  // ── Filling the day ──────────────────────────────────────────────
   //
-  // Pass 1 walks the slots in coverage order — every position's opening shift
-  // before anyone's handoff — consuming one eligible person per slot, to work
-  // out how many are actually staffable today.
+  // Greedy filling was the problem here. Walking the slots and taking the best
+  // person for each never reconsiders a slot once it is taken, so someone who
+  // comes later loses every option to colleagues who had alternatives — even
+  // when a single swap would seat them both. On a Monday with a prepper on
+  // Prep 2 PM who could just as well work the mid, Prep 2 PM stays occupied
+  // and the person who could ONLY work Prep 2 PM goes home.
+  //
+  // That swap is an augmenting path, so this matches people to slots properly
+  // rather than filling slots one at a time. Each person is tried in turn; if
+  // every slot they can work is taken, whoever holds one is asked to move
+  // elsewhere, recursively. Nobody is displaced from the day — only shifted to
+  // another slot they can work — so a swap never costs a shift, and the result
+  // fills as many slots as the crew can possibly cover.
   const openSlots = ctx.slots.filter(
     s => !coveredPositions.has(`${s.location}:${s.position}`)
   )
 
-  // Scarcest slot first within each shift period, so the slot only two people
-  // can work is filled before those two have been used up elsewhere.
-  const free = ctx.staff.filter(e => !assignedToday.has(e.id) && ctx.underCap(e))
-  const ordered = orderByScarcity(
-    openSlots,
-    slot => free.filter(e => eligibleFor(e, slot)).length
-  )
+  const candidates = ctx.staff.filter(e => !assignedToday.has(e.id) && ctx.underCap(e))
 
-  const unclaimed = new Set(free.map(e => e.id))
-  const staffable: DaySlot[] = []
-  for (const slot of ordered) {
-    // Same choice pass 2 will make, so the two agree about what is coverable.
-    const candidate = pickWithoutStranding(
-      ctx.staff
-        .filter(e => unclaimed.has(e.id) && eligibleFor(e, slot) && ctx.underCap(e))
-        .sort(pickOrder(slot.location))
-    )
-    if (!candidate) continue
-    unclaimed.delete(candidate.id)
-    staffable.push(slot)
+  // Scarcest slot first within each shift period, so a slot only two people can
+  // work is offered while those two are still free.
+  const orderedSlots = orderByScarcity(
+    openSlots,
+    slot => candidates.filter(e => eligibleFor(e, slot)).length
+  )
+  const slotIndex = orderedSlots.map((_, i) => i)
+
+  /**
+   * Who gets first refusal.
+   *
+   * Anyone owed days against an agreement, then whoever has worked least.
+   * Managers come after equals so they stay free to float rather than taking a
+   * slot somebody else needs. Order decides who gets their pick of the slots,
+   * not who gets in at all — matching seats everyone who can be seated.
+   */
+  const byPriority = [...candidates].sort((a, b) => {
+    const oa = ctx.daysOwed(a)
+    const ob = ctx.daysOwed(b)
+    if (oa !== ob) return ob - oa
+    const ha = hours(a)
+    const hb = hours(b)
+    if (ha !== hb) return ha - hb
+    if (a.is_manager !== b.is_manager) return a.is_manager ? 1 : -1
+    return a.id.localeCompare(b.id) // stable, so the same input gives the same rota
+  })
+
+  /** slot index -> who holds it */
+  const holder = new Map<number, Employee>()
+
+  /**
+   * Seat this person, moving whoever is in the way if they have somewhere else
+   * to go. Returns false only when no rearrangement of the whole day can fit
+   * them, so a false here really does mean there is no room.
+   */
+  function seat(e: Employee, allowed: number[], tried: Set<number>): boolean {
+    for (const i of allowed) {
+      if (tried.has(i) || !eligibleFor(e, orderedSlots[i])) continue
+      tried.add(i)
+      const current = holder.get(i)
+      if (!current || seat(current, allowed, tried)) {
+        holder.set(i, e)
+        return true
+      }
+    }
+    return false
   }
 
-  // Slots pass 1 could not staff at all — nobody eligible left, or everyone who
-  // was is already at their weekly cap.
-  unfilled += openSlots.length - staffable.length
+  // Opens and closes are matched first, on their own, so a short-handed day
+  // loses its mids rather than leaving a position with nobody to open it.
+  // Widening to the mids afterwards can only add to the matching: nobody
+  // already seated is turned out, they are at most moved.
+  const openCloseFirst = slotIndex.filter(
+    i => shiftPeriodFor(orderedSlots[i].location, orderedSlots[i].slotOrder) !== 'mid'
+  )
+  for (const phase of [openCloseFirst, slotIndex]) {
+    for (const e of byPriority) {
+      if ([...holder.values()].some(h => h.id === e.id)) continue
+      seat(e, phase, new Set<number>())
+    }
+  }
 
-  // Pass 2 fills them in the same order, so opens and closes are staffed before
-  // mids and the two passes agree about what is coverable.
-  for (let i = 0; i < staffable.length; i++) {
-    const slot = staffable[i]
-    const eligible = ctx.staff
-      .filter(e => !assignedToday.has(e.id) && eligibleFor(e, slot) && ctx.underCap(e))
-      .sort(pickOrder(slot.location))
-
-    // A manager is the fallback everywhere, including the kitchen, so they stay
-    // free to float. Chef used to prefer a manager outright, which meant a
-    // manager who could cook took the kitchen every day and the actual chef —
-    // whose only skill it is — was never scheduled at all.
-    const pool = [...eligible.filter(e => !e.is_manager), ...eligible.filter(e => e.is_manager)]
-
-    const emp = pickWithoutStranding(pool)
-    if (!emp) {
+  for (const i of slotIndex) {
+    const e = holder.get(i)
+    const slot = orderedSlots[i]
+    if (!e) {
       unfilled++
       continue
     }
-    place(emp, slot.location, slot.position, slot.slotOrder, slot.start, slot.end, false)
-  }
-
-  /** Slots anywhere in the day this person could be placed in at all. */
-  function placesInDay(e: Employee): number {
-    return ctx.slots.filter(
-      s => !coveredPositions.has(`${s.location}:${s.position}`) && eligibleFor(e, s)
-    ).length
-  }
-
-  /**
-   * The best candidate for a slot, protecting anyone who has only one place to
-   * be in the whole day.
-   *
-   * Hours decide who works, which is what keeps the registers even. But the
-   * chef's only skill is chef, so the kitchen is the single slot he can fill;
-   * hand it to whoever happens to be behind on hours and he works nowhere at
-   * all. A specialist losing their one slot isn't a fairness trade, it's a
-   * person going home.
-   *
-   * The guard is deliberately limited to exactly that — one place in the day.
-   * Someone available only for PM still has every PM slot open to them and is
-   * NOT protected here: sorting everyone by how boxed in they are is what left
-   * the most available staff with the least work, and slot ordering already
-   * fills scarce slots while their few takers are free.
-   */
-  function pickWithoutStranding(pool: Employee[]): Employee | undefined {
-    const best = pool[0]
-    if (!best) return undefined
-    if (placesInDay(best) <= 1) return best // it's their one place too
-    return pool.find(e => placesInDay(e) <= 1) ?? best
+    place(e, slot.location, slot.position, slot.slotOrder, slot.start, slot.end, false)
   }
 
   return { placements, unfilled }

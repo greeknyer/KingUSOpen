@@ -181,11 +181,16 @@ a full day for one date.
    leaving a position with nobody to open it. Within a shift, the slot with
    **fewest people able to work it** goes first, so a scarce slot is filled
    while its few takers are still free.
-3. Each slot goes to whoever is **owed days against an agreement**, then to
-   whoever has **worked fewest hours**. That is what keeps hours even.
-4. One exception: someone with only **one place in the whole day** — the chef,
-   whose single skill is chef — keeps it rather than losing it to whoever is
-   behind on hours. For them it isn't a fairness trade, it's not working at all.
+3. People are then **matched** to those slots, in order of who is **owed days
+   against an agreement** and then who has **worked fewest hours**. Matching,
+   not filling one slot at a time: if every slot someone can work is taken,
+   whoever holds one is asked to move to another slot they can work, and so on
+   down the chain. Nobody is ever displaced out of the day, only shifted, so a
+   swap never costs a shift and as many slots are filled as the crew can
+   possibly cover.
+
+That last point is what stops a prepper who can only work Prep 2 PM going home
+because a colleague who could just as well work the mid was put there first.
 
 Being available for more shifts never costs you work. An earlier version ranked
 people by how boxed in they were before looking at hours, which left the most
@@ -195,11 +200,14 @@ Unfilled slots are reported back rather than passed over silently, and the
 **Who's working** panel on the schedule shows each person's days, hours and the
 reason they didn't get more.
 
-`scripts/sim-fairness.ts` runs a week through the real scheduler and prints the
-spread, for checking a change to any of this:
+Two harnesses run the real scheduler, for checking a change to any of this:
 
 ```bash
+# a week's hours and coverage, with the spread
 node --import ./scripts/ts-resolve.mjs --experimental-strip-types scripts/sim-fairness.ts
+
+# the swap cases, which greedy filling gets wrong
+node --import ./scripts/ts-resolve.mjs --experimental-strip-types scripts/test-matching.ts
 ```
 
 ## Deploy to Vercel

@@ -82,6 +82,7 @@ const staff: Employee[] = [
   emp('Prep A', ['prep'], every(ALL), { works_full_day: true }),
   emp('Prep B', ['prep'], every(['am', 'pm']), { works_full_day: true }),
   emp('Prep C', ['prep'], every(ALL)),
+  emp('Dimos', ['prep'], split(['pm'], ALL)),
   emp('Prep D', ['prep'], every(['pm'])),
   emp('Prep E', ['prep'], split(['pm'], ALL)),
   emp('Prep F', ['prep', 'register'], every(ALL)),
