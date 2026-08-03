@@ -311,6 +311,34 @@ export interface TimeEntry {
   employee?: Employee
 }
 
+/** A product a location stocks, in the order it gets counted. */
+export interface InventoryItem {
+  id: string
+  year: number
+  location: Location
+  name: string
+  /** What one of them is — 'case', 'bag'. Blank when it's just a number. */
+  unit: string | null
+  sort_order: number
+  active: boolean
+}
+
+/** How many of one product were left on one date. */
+export interface InventoryCount {
+  id: string
+  year: number
+  date: string
+  item_id: string
+  /** NULL means not counted yet, which is not the same as a counted zero. */
+  on_hand: number | null
+}
+
+/** How many lines each location's sheet is expected to have. */
+export const PRODUCT_SHEET_SIZE: Record<Location, number> = {
+  food_village: 36,
+  stadium: 21,
+}
+
 // Position metadata. `shifts` narrows which of the location's shifts a position
 // actually runs — omitted means all of them.
 export type PositionMeta = {

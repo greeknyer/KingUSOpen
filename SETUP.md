@@ -31,6 +31,7 @@ one is harmless.
 | `017_prep_period_shifts` | which shifts each prep position runs, per week |
 | `018_stadium_mid_register` | the Stadium register as a single midday shift |
 | `019_stadium_mid_times` | that shift runs noon to 8pm |
+| `020_product_sheet` | product lists and daily counts per location |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -77,9 +78,11 @@ Each step feeds the next, so it's worth doing them in this order.
 5. **Availability** → already filled in from each person's weekly pattern. Only
    touch dates that differ from their usual.
 6. **Schedule** → Auto-Schedule a period, adjust by hand, then **Publish**.
-7. **Time Tracking** → *Fill from schedule*, then correct anyone who ran long
+7. **Product Sheet** → *Edit products* once per location to enter the list,
+   then count what's left at the end of each day and photograph it.
+8. **Time Tracking** → *Fill from schedule*, then correct anyone who ran long
    or short.
-8. **Payroll Export** → weekly Excel file.
+9. **Payroll Export** → weekly Excel file.
 
 ## How the app is put together
 
