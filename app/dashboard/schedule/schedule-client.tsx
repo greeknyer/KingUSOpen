@@ -8,7 +8,7 @@ import {
   ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel, positionRunsSlot,
   buildPeriodShiftMap, positionRunsSlotInPeriod, positionOpenInPeriod,
   Availability, availableShiftsOn, worksFullDayOn, shiftLengthHours, canWorkLocation,
-  skillLabel, LOCATION_LABELS, canWorkAnyPosition, canWorkOn, shiftPeriodFor,
+  skillLabel, SKILLS, LOCATION_LABELS, canWorkAnyPosition, canWorkOn, shiftPeriodFor,
   patternShiftsOn, weekdayIndex, DAY_LABELS,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, unpublishPeriod, clearDraftPeriod } from './actions'
@@ -541,6 +541,28 @@ export default function ScheduleClient({
     // Whoever got least is what you came to this table to look at.
     .sort((a, b) => a.days - b.days || b.freeDays - a.freeDays)
 
+  /**
+   * The same people grouped by the station they cover, because moving somebody
+   * by hand means finding cover for one position — so the useful question is
+   * who else can work a register, not who is idle across the whole crew.
+   *
+   * Anyone qualified for several stations appears under each of them. That is
+   * the point: they are the people who can be moved between stations, and the
+   * spare capacity in one is often standing in another.
+   */
+  const stations = [
+    ...SKILLS.map(skill => ({
+      id: skill.id as string,
+      label: skill.label,
+      people: summary.filter(r => (r.e.skills ?? []).includes(skill.id)),
+    })),
+    {
+      id: 'none',
+      label: 'No positions set',
+      people: summary.filter(r => (r.e.skills ?? []).length === 0),
+    },
+  ].filter(g => g.people.length > 0)
+
   function handleAutoSchedule() {
     setMessage('')
     // Open days and shift times now come from the hours saved in Tournament
@@ -916,7 +938,7 @@ export default function ScheduleClient({
           <span>
             <span className="text-sm font-bold text-slate-900">Who&apos;s working — {PERIOD_LABELS[activePeriod]}</span>
             <span className="text-xs text-slate-500 ml-2">
-              Tap anyone to see their week day by day, and why they didn&apos;t get more
+              Grouped by station, fewest days first. Tap anyone for their week day by day
             </span>
           </span>
           <span className="text-xs font-semibold text-slate-500">{showSummary ? 'Hide' : 'Show'}</span>
@@ -936,14 +958,30 @@ export default function ScheduleClient({
                 </tr>
               </thead>
               <tbody>
-                {summary.map(({ e, days, hours, freeDays, cap, worksFull, promised, reason, tone }) => (
-                  <Fragment key={e.id}>
+                {stations.map(station => (
+                  <Fragment key={station.id}>
+                  <tr className="bg-slate-100/80 border-y border-slate-200">
+                    <td colSpan={6} className="px-4 py-1.5">
+                      <span className="text-xs font-bold uppercase tracking-wide text-slate-700">{station.label}</span>
+                      <span className="ml-2 text-xs text-slate-500">
+                        {station.people.length} can cover it
+                        {(() => {
+                          const spare = station.people.filter(r => r.days < r.freeDays).length
+                          return spare > 0 ? ` · ${spare} with free days going unused` : ' · all fully used'
+                        })()}
+                      </span>
+                    </td>
+                  </tr>
+                  {station.people.map(({ e, days, hours, freeDays, cap, worksFull, promised, reason, tone }) => {
+                  const rowKey = `${station.id}:${e.id}`
+                  return (
+                  <Fragment key={rowKey}>
                   <tr
-                    onClick={() => setOpenPerson(openPerson === e.id ? null : e.id)}
-                    className="border-b border-gray-50 last:border-0 cursor-pointer hover:bg-slate-50 active:bg-slate-100"
+                    onClick={() => setOpenPerson(openPerson === rowKey ? null : rowKey)}
+                    className="border-b border-gray-50 cursor-pointer hover:bg-slate-50 active:bg-slate-100"
                   >
                     <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap">
-                      <span className="text-gray-300 mr-1.5">{openPerson === e.id ? '▾' : '▸'}</span>
+                      <span className="text-gray-300 mr-1.5">{openPerson === rowKey ? '▾' : '▸'}</span>
                       {e.name}
                       {e.is_manager && (
                         <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">Mgr</span>
@@ -983,7 +1021,7 @@ export default function ScheduleClient({
                       {reason || 'Every free day used'}
                     </td>
                   </tr>
-                  {openPerson === e.id && (
+                  {openPerson === rowKey && (
                     <tr className="border-b border-gray-100 bg-slate-50/60">
                       <td colSpan={6} className="px-4 py-3">
                         <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
@@ -1012,10 +1050,16 @@ export default function ScheduleClient({
                     </tr>
                   )}
                   </Fragment>
+                  )})}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
             <p className="px-4 py-3 text-xs text-gray-500 bg-gray-50 border-t border-gray-100">
+              Anyone qualified for several stations is listed under each, so the spare capacity
+              for one is often standing in another — that&apos;s who to move. The <strong>Can work</strong>
+              column shows where else they can go.
+              <br />
               Auto-Schedule balances <strong>hours</strong>, not days — so someone on full days
               reaches everyone else&apos;s total in fewer, longer days. It is also deterministic:
               running it again always produces the same schedule.
