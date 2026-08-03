@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { Fragment, useState, useTransition } from 'react'
 import {
   Employee, ScheduleAssignment, TournamentSettings, OperatingHours, OptionalPositionConfig,
   FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS, getTournamentDates, getPeriodForDate, formatTime, Position,
@@ -8,7 +8,7 @@ import {
   ShiftTemplate, SLOTS_PER_LOCATION, shiftsForDay, shiftLabel, positionRunsSlot,
   buildPeriodShiftMap, positionRunsSlotInPeriod, positionOpenInPeriod,
   Availability, availableShiftsOn, worksFullDayOn, shiftLengthHours, canWorkLocation,
-  skillLabel, LOCATION_LABELS, canWorkAnyPosition,
+  skillLabel, LOCATION_LABELS, canWorkAnyPosition, canWorkOn, shiftPeriodFor,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, unpublishPeriod, clearDraftPeriod } from './actions'
 
@@ -235,6 +235,7 @@ export default function ScheduleClient({
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState('')
   const [showSummary, setShowSummary] = useState(false)
+  const [openPerson, setOpenPerson] = useState<string | null>(null)
   const [modal, setModal] = useState<{
     date: string; location: string; position: Position; slotOrder: number; existing?: ScheduleAssignment
   } | null>(null)
@@ -385,6 +386,85 @@ export default function ScheduleClient({
   const periodAssignments = initialAssignments.filter(
     a => currentDates.includes(a.date) && a.employee_id
   )
+
+  /**
+   * Every slot running on a date that this person could be put in.
+   *
+   * The same three tests the scheduler applies — position, location, shift —
+   * so what this reports is what it saw. A position somebody holds open to
+   * close is excluded: it runs no separate shifts that day.
+   */
+  function slotsOpenTo(e: Employee, date: string) {
+    const out: { location: Location; position: Position; slotOrder: number; taken: boolean }[] = []
+    const shifts = availableShiftsOn(e, date, availMap.get(`${e.id}:${date}`))
+
+    for (const location of ['food_village', 'stadium'] as Location[]) {
+      if (!canWorkLocation(e, location) || !isLocationOpen(location, date)) continue
+      const positions = location === 'food_village' ? FOOD_VILLAGE_POSITIONS : STADIUM_POSITIONS
+      for (const pos of positions) {
+        if (!canWorkOn(e, pos.id, availMap.get(`${e.id}:${date}`))) continue
+        const holder = fullDayHolder(location, date, pos.id)
+        const slotNums = location === 'food_village' ? FV_SLOTS : STADIUM_SLOTS
+        for (const slotOrder of slotNums) {
+          if (!runsSlot(location, pos.id, slotOrder)) continue
+          if (!slotApplies(location, date, slotOrder)) continue
+          if (holder && holder.slot_order !== slotOrder) continue
+          if (!shifts.includes(shiftPeriodFor(location, slotOrder))) continue
+          const taken = getAssignments(date, location, pos.id).some(
+            a => a.slot_order === slotOrder && a.employee_id
+          )
+          out.push({ location, position: pos.id, slotOrder, taken })
+        }
+      }
+    }
+    return out
+  }
+
+  const positionLabel = (id: string) =>
+    [...FOOD_VILLAGE_POSITIONS, ...STADIUM_POSITIONS].find(p => p.id === id)?.label ?? id
+
+  /** What happened to one person on one date, and why. */
+  function dayDetail(e: Employee, date: string): { tone: 'on' | 'off' | 'gap'; text: string } {
+    const mine = initialAssignments.find(a => a.date === date && a.employee_id === e.id)
+    if (mine) {
+      return {
+        tone: 'on',
+        text: `${positionLabel(mine.position)} · ${formatTime(mine.planned_start)}–${formatTime(mine.planned_end)}` +
+          (mine.is_full_day ? ' (full day)' : ''),
+      }
+    }
+
+    const openSomewhere =
+      (canWorkLocation(e, 'food_village') && isLocationOpen('food_village', date)) ||
+      (canWorkLocation(e, 'stadium') && isLocationOpen('stadium', date))
+    if (!openSomewhere) return { tone: 'off', text: 'nothing open' }
+
+    if (availableShiftsOn(e, date, availMap.get(`${e.id}:${date}`)).length === 0) {
+      return { tone: 'off', text: 'not available' }
+    }
+
+    const cap = e.is_manager ? null : e.max_shifts_per_week
+    const worked = new Set(periodAssignments.filter(a => a.employee_id === e.id).map(a => a.date)).size
+    if (cap != null && worked >= cap) return { tone: 'gap', text: `at ${cap}-shift cap` }
+
+    const slots = slotsOpenTo(e, date)
+    if (slots.length === 0) {
+      return {
+        tone: 'gap',
+        text: (e.skills ?? []).length === 0
+          ? 'no positions set'
+          : 'nothing they cover runs today',
+      }
+    }
+    const free = slots.filter(s => !s.taken)
+    if (free.length > 0) {
+      return { tone: 'gap', text: `${free.length} slot(s) free — re-run Auto-Schedule` }
+    }
+    // The honest answer when the day is simply full: name what they cover and
+    // how many of it there was, since that is the number to change.
+    const names = [...new Set(slots.map(s => positionLabel(s.position)))]
+    return { tone: 'gap', text: `all ${slots.length} slot(s) taken — ${names.join(', ')}` }
+  }
 
   const summary = employees
     .map(e => {
@@ -824,7 +904,7 @@ export default function ScheduleClient({
           <span>
             <span className="text-sm font-bold text-slate-900">Who&apos;s working — {PERIOD_LABELS[activePeriod]}</span>
             <span className="text-xs text-slate-500 ml-2">
-              Days and hours per person, and why anyone got fewer
+              Tap anyone to see their week day by day, and why they didn&apos;t get more
             </span>
           </span>
           <span className="text-xs font-semibold text-slate-500">{showSummary ? 'Hide' : 'Show'}</span>
@@ -845,8 +925,13 @@ export default function ScheduleClient({
               </thead>
               <tbody>
                 {summary.map(({ e, days, hours, freeDays, cap, worksFull, promised, reason, tone }) => (
-                  <tr key={e.id} className="border-b border-gray-50 last:border-0">
+                  <Fragment key={e.id}>
+                  <tr
+                    onClick={() => setOpenPerson(openPerson === e.id ? null : e.id)}
+                    className="border-b border-gray-50 last:border-0 cursor-pointer hover:bg-slate-50 active:bg-slate-100"
+                  >
                     <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap">
+                      <span className="text-gray-300 mr-1.5">{openPerson === e.id ? '▾' : '▸'}</span>
                       {e.name}
                       {e.is_manager && (
                         <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">Mgr</span>
@@ -886,6 +971,35 @@ export default function ScheduleClient({
                       {reason || 'Every free day used'}
                     </td>
                   </tr>
+                  {openPerson === e.id && (
+                    <tr className="border-b border-gray-100 bg-slate-50/60">
+                      <td colSpan={6} className="px-4 py-3">
+                        <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
+                          {currentDates.map(date => {
+                            const { weekday, date: d, month } = formatDateHeader(date)
+                            const detail = dayDetail(e, date)
+                            return (
+                              <div key={date} className={`rounded-lg border px-2.5 py-1.5 text-xs ${
+                                detail.tone === 'on' ? 'bg-white border-emerald-200'
+                                : detail.tone === 'gap' ? 'bg-white border-amber-200'
+                                : 'bg-transparent border-gray-100'
+                              }`}>
+                                <div className="font-semibold text-gray-700">{weekday} {month} {d}</div>
+                                <div className={
+                                  detail.tone === 'on' ? 'text-emerald-700'
+                                  : detail.tone === 'gap' ? 'text-amber-700'
+                                  : 'text-gray-400'
+                                }>
+                                  {detail.text}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
