@@ -110,6 +110,35 @@ export async function fillDayFromSchedule(
   return { ok: true }
 }
 
+/**
+ * Remove entries for people the schedule no longer has on that day.
+ *
+ * An entry outlives the shift that created it: fill a day from the schedule,
+ * then move somebody off it, and their hours stay behind and go on to payroll.
+ *
+ * Deliberately not automatic. Someone can genuinely work a day they were never
+ * scheduled for, and those hours are the ones nobody would notice disappearing,
+ * so the screen names who is affected and this runs only when asked.
+ */
+export async function clearUnscheduledEntries(
+  year: number,
+  date: string,
+  employeeIds: string[]
+): Promise<SaveResult> {
+  if (employeeIds.length === 0) return { ok: true }
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('time_entries')
+    .delete()
+    .eq('year', year)
+    .eq('date', date)
+    .in('employee_id', employeeIds)
+  if (error) return toResult(error)
+  revalidatePath('/dashboard/timetracking')
+  revalidatePath('/dashboard/payroll')
+  return { ok: true }
+}
+
 export async function deleteTimeEntry(id: string): Promise<SaveResult> {
   const supabase = await createClient()
   const { error } = await supabase.from('time_entries').delete().eq('id', id)

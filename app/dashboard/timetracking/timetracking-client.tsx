@@ -6,7 +6,7 @@ import {
   getTournamentDates, buildHoursMap, getHoursForDate, formatTime, shiftLabel,
   FOOD_VILLAGE_POSITIONS, STADIUM_POSITIONS,
 } from '@/lib/types'
-import { saveTimeEntry, fillDayFromSchedule } from './actions'
+import { saveTimeEntry, fillDayFromSchedule, clearUnscheduledEntries } from './actions'
 
 /** What the schedule says an employee should work on a date. */
 type Scheduled = {
@@ -91,8 +91,14 @@ function TimeRow({
     setSaved(false)
   }
 
+  // Hours recorded against a day the schedule no longer has them on. Worth
+  // showing differently from an ordinary unscheduled row, which is simply blank.
+  const strandedHours = !scheduled && isSaved && (!!entry?.actual_in || !!entry?.actual_out)
+
   return (
-    <tr className={`border-t border-gray-50 ${!scheduled ? 'bg-gray-50/40' : ''}`}>
+    <tr className={`border-t border-gray-50 ${
+      strandedHours ? 'bg-amber-50/70' : !scheduled ? 'bg-gray-50/40' : ''
+    }`}>
       <td className="px-4 py-2.5 align-top">
         <div className="text-sm font-medium text-gray-900">{employee.name}</div>
         {employee.is_manager && (
@@ -110,7 +116,9 @@ function TimeRow({
             </div>
           </div>
         ) : (
-          <span className="text-xs text-gray-300">Not scheduled</span>
+          <span className={`text-xs ${strandedHours ? 'text-amber-700 font-semibold' : 'text-gray-300'}`}>
+            {strandedHours ? 'Not scheduled — hours left over' : 'Not scheduled'}
+          </span>
         )}
       </td>
 
@@ -243,6 +251,38 @@ export default function TimeTrackingClient({
 
   const unsaved = [...scheduledIds].filter(id => !entryMap.has(id)).length
 
+  /**
+   * People with hours recorded who the schedule no longer has on this day.
+   *
+   * Entries outlive the shift that created them, so filling a day and then
+   * moving somebody off it leaves their hours behind — and those hours go
+   * through to payroll looking exactly like worked ones.
+   */
+  const stale = employees
+    .filter(e => !scheduledIds.has(e.id))
+    .map(e => ({ employee: e, entry: entryMap.get(e.id) }))
+    .filter(r => r.entry && (r.entry.actual_in || r.entry.actual_out))
+
+  const staleHours = stale.reduce((sum, r) => sum + (r.entry?.hours_calculated ?? 0), 0)
+
+  function handleClearStale() {
+    setMessage(''); setError('')
+    const names = stale.map(r => r.employee.name).join(', ')
+    if (!confirm(
+      `Clear recorded hours for ${stale.length} person(s) not scheduled on this day?\n\n` +
+      `${names}\n\n` +
+      `${staleHours.toFixed(2)} hours will be removed from payroll. ` +
+      `If any of them did work, leave this and correct the schedule instead.`
+    )) return
+    startTransition(async () => {
+      const r = await clearUnscheduledEntries(
+        settings.year, selectedDate, stale.map(s => s.employee.id)
+      )
+      if (r.ok) setMessage(`Cleared ${stale.length} entr${stale.length === 1 ? 'y' : 'ies'}.`)
+      else setError(r.error)
+    })
+  }
+
   function handleFillAll() {
     setMessage(''); setError('')
     const rows = employees
@@ -310,6 +350,32 @@ export default function TimeTrackingClient({
         </div>
       )}
 
+      {/* Hours left behind by a schedule change. These reach payroll looking
+          like worked hours, so they are called out rather than left to be
+          spotted in a row that otherwise looks like any other. */}
+      {stale.length > 0 && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="font-semibold mb-0.5">
+              {stale.length} {stale.length === 1 ? 'person has' : 'people have'} hours recorded but
+              {stale.length === 1 ? " isn't" : " aren't"} scheduled today
+            </div>
+            <div className="text-xs">
+              {stale.map(r => r.employee.name).join(', ')} — {staleHours.toFixed(2)}h in total.
+              Left over from a shift that has since moved. If they did work, fix the schedule
+              instead so the hours have something to match.
+            </div>
+          </div>
+          <button
+            onClick={handleClearStale}
+            disabled={pending}
+            className="shrink-0 px-4 py-2.5 min-h-[44px] bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 active:bg-amber-800 disabled:opacity-50 transition"
+          >
+            Clear {stale.length}
+          </button>
+        </div>
+      )}
+
       <div className="mb-4 px-4 py-3 rounded-lg bg-blue-50 border border-blue-100 text-sm text-blue-800">
         Times start from what each person was scheduled for, so an ordinary day is just
         <strong> Fill from schedule</strong>. Change any row that ran long or short before saving —
@@ -331,7 +397,10 @@ export default function TimeTrackingClient({
           <tbody>
             {ordered.map(emp => (
               <TimeRow
-                key={`${emp.id}:${selectedDate}`}
+                // The saved entry is part of the key so clearing one remounts
+                // the row. The inputs hold their own state, so without this the
+                // cleared times would stay on screen until a reload.
+                key={`${emp.id}:${selectedDate}:${entryMap.get(emp.id)?.id ?? 'none'}`}
                 employee={emp}
                 entry={entryMap.get(emp.id)}
                 scheduled={scheduledFor(emp.id)}
