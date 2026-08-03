@@ -34,6 +34,7 @@ one is harmless.
 | `020_product_sheet` | product lists and daily counts per location |
 | `021_inventory_deliveries` | what the warehouse delivered, for the totals screen |
 | `022_inventory_access` | Total Inventory limited to named accounts |
+| `023_fix_admin_list` | sets that list to the two owner accounts |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -87,10 +88,13 @@ Each step feeds the next, so it's worth doing them in this order.
    received across the tournament and what has gone out. Limited to the accounts
    listed in `app_admins`, and absent from the Product Sheet entirely.
 
-   To let somebody else see it, add their login email in the Supabase SQL editor:
+   To let somebody else see it, add their Supabase login email in the SQL
+   editor — it must match their account exactly, since the check reads it from
+   the signed-in user's token:
 
    ```sql
    insert into app_admins (email, note) values ('them@example.com', 'GM');
+   delete from app_admins where email = 'them@example.com';  -- to take it away
    ```
 
    The table is deliberately unreadable through the API — the check runs inside

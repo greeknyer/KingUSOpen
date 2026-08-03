@@ -3,9 +3,9 @@
 -- Run this in the Supabase SQL Editor after 021_inventory_deliveries.sql.
 --
 -- ─────────────────────────────────────────────────────────────────
--- ADD YOUR OWN ADDRESSES BELOW BEFORE RUNNING, or you will lock
--- yourself out of the screen. dimosg@sirinafire.com is seeded; add
--- anyone else who should see the totals.
+-- dev@kingusopen.com and vivi2321@gmail.com are seeded. Add anyone
+-- else who should see the totals BEFORE running, or you will lock
+-- them out of the screen.
 -- ─────────────────────────────────────────────────────────────────
 --
 -- Deliveries and the totals drawn from them are not for everyone with a login.
@@ -28,10 +28,12 @@ create table if not exists app_admins (
   created_at timestamptz not null default now()
 );
 
--- Seed the owner. Add a row per person who should see the totals:
+-- The two accounts with full access. Add a row per person who should see the
+-- totals:
 --   insert into app_admins (email, note) values ('someone@example.com', 'GM');
-insert into app_admins (email, note)
-values ('dimosg@sirinafire.com', 'Owner')
+insert into app_admins (email, note) values
+  ('dev@kingusopen.com', 'Owner'),
+  ('vivi2321@gmail.com', 'Owner')
 on conflict (email) do nothing;
 
 /*
