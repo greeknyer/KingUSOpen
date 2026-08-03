@@ -135,7 +135,7 @@ export default function ProductsClient({
 
   return (
     <div>
-      <div className="mb-6 no-print">
+      <div className="mb-3 no-print">
         <h1 className="text-2xl font-bold text-gray-900">Product Sheet</h1>
         <p className="text-sm text-gray-500 mt-1">
           What&apos;s left at the end of the day, so the warehouse knows what to send tomorrow.
@@ -144,7 +144,7 @@ export default function ProductsClient({
       </div>
 
       {/* Controls */}
-      <div className="flex flex-wrap items-end gap-3 mb-5 no-print">
+      <div className="flex flex-wrap items-end gap-3 mb-3 no-print">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {LOCATIONS.map(loc => (
             <button
@@ -320,12 +320,12 @@ export default function ProductsClient({
       ) : (
         /* ── The sheet ───────────────────────────────────────────── */
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-200 flex items-end justify-between gap-4 flex-wrap">
+          <div className="px-4 py-2.5 border-b border-gray-200 flex items-end justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-lg font-bold text-gray-900">
+              <div className="text-base font-bold text-gray-900">
                 {LOCATION_LABELS[location]} — on hand
               </div>
-              <div className="text-sm text-gray-500">{dateLabel}</div>
+              <div className="text-xs text-gray-500">{dateLabel}</div>
             </div>
             <div className={`text-sm font-semibold no-print ${
               countedNow === locationItems.length ? 'text-emerald-600' : 'text-gray-400'
@@ -337,19 +337,25 @@ export default function ProductsClient({
             </div>
           </div>
 
-          {/* Two columns on a wide screen so a 36-line sheet fits one photo. */}
-          <div className="grid md:grid-cols-2">
+          {/* Three columns on a wide screen, so 36 lines are 12 rows and the
+              whole sheet is one photograph rather than two or three.
+
+              CSS columns rather than a grid: content flows DOWN each column
+              before moving across, so the numbering reads 1-12, 13-24, 25-36
+              like a printed list. A grid would run 1,2,3 across each row, which
+              is not how anyone reads a numbered sheet. */}
+          <div className="columns-1 sm:columns-2 lg:columns-3 gap-0 [column-rule:1px_solid_#f3f4f6]">
             {locationItems.map((item, i) => (
               <div
                 key={item.id}
-                className={`flex items-center gap-3 px-4 py-2 border-b border-gray-100 ${
-                  i % 2 === 1 ? 'md:border-l' : ''
-                }`}
+                // Nothing may straddle a column break, or a row would be cut in
+                // half down the middle of the picture.
+                className="break-inside-avoid flex items-center gap-2 px-3 py-0.5 border-b border-gray-100"
               >
                 <span className="w-6 text-right text-xs text-gray-400 tabular-nums shrink-0">{i + 1}</span>
-                <span className="flex-1 text-[15px] font-medium text-gray-900 leading-tight">
+                <span className="flex-1 text-sm font-medium text-gray-900 leading-tight">
                   {item.name}
-                  {item.unit && <span className="text-xs text-gray-400 font-normal ml-1.5">/ {item.unit}</span>}
+                  {item.unit && <span className="text-[11px] text-gray-400 font-normal ml-1"> / {item.unit}</span>}
                 </span>
                 <input
                   type="number"
@@ -358,15 +364,17 @@ export default function ProductsClient({
                   min="0"
                   value={valueFor(item.id)}
                   onChange={e => setValue(item.id, e.target.value)}
-                  className="w-24 shrink-0 text-center text-lg font-bold border border-gray-200 rounded-lg px-2 py-2 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  // Still a 44px tap target, with the padding around it taken
+                  // out instead — that is what buys the rows back.
+                  className="w-16 shrink-0 text-center text-base font-bold border border-gray-200 rounded-lg px-1 py-1 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-gray-900"
                 />
               </div>
             ))}
           </div>
 
-          <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 no-print">
-            A blank box means not counted, which is not the same as a counted zero — the warehouse
-            can tell the difference. Save the sheet before you photograph it if you want it kept.
+          <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-[11px] text-gray-500 no-print">
+            A blank box means not counted, which is not the same as a counted zero. Save before
+            photographing if you want the sheet kept.
           </div>
         </div>
       )}

@@ -53,7 +53,7 @@ export default async function ProductsPage() {
   }
 
   return (
-    <div className="p-8 max-w-full">
+    <div className="p-5 max-w-full">
       <ProductsClient
         settings={settings}
         items={(items ?? []) as InventoryItem[]}
