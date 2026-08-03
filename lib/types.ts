@@ -323,7 +323,7 @@ export interface InventoryItem {
   active: boolean
 }
 
-/** How many of one product were left on one date. */
+/** What happened to one product on one date: what arrived, and what was left. */
 export interface InventoryCount {
   id: string
   year: number
@@ -331,6 +331,8 @@ export interface InventoryCount {
   item_id: string
   /** NULL means not counted yet, which is not the same as a counted zero. */
   on_hand: number | null
+  /** How many arrived that day, opening stock included. NULL = no delivery. */
+  delivered: number | null
 }
 
 /** How many lines each location's sheet is expected to have. */

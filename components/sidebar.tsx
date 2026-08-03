@@ -11,6 +11,7 @@ const navItems = [
   { href: '/dashboard/availability', label: 'Availability', icon: '📅' },
   { href: '/dashboard/schedule', label: 'Schedule', icon: '📋' },
   { href: '/dashboard/products', label: 'Product Sheet', icon: '📦' },
+  { href: '/dashboard/inventory', label: 'Total Inventory', icon: '🔒' },
   { href: '/dashboard/timetracking', label: 'Time Tracking', icon: '⏱️' },
   { href: '/dashboard/payroll', label: 'Payroll Export', icon: '💰' },
 ]

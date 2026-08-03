@@ -32,6 +32,7 @@ one is harmless.
 | `018_stadium_mid_register` | the Stadium register as a single midday shift |
 | `019_stadium_mid_times` | that shift runs noon to 8pm |
 | `020_product_sheet` | product lists and daily counts per location |
+| `021_inventory_deliveries` | what the warehouse delivered, for the totals screen |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -79,10 +80,14 @@ Each step feeds the next, so it's worth doing them in this order.
    touch dates that differ from their usual.
 6. **Schedule** → Auto-Schedule a period, adjust by hand, then **Publish**.
 7. **Product Sheet** → *Edit products* once per location to enter the list,
-   then count what's left at the end of each day and photograph it.
-8. **Time Tracking** → *Fill from schedule*, then correct anyone who ran long
+   then count what's left at the end of each day and photograph it. This is the
+   only inventory screen the warehouse sees.
+8. **Total Inventory** → enter each morning's delivery. Shows what has been
+   received across the tournament and what has gone out. Internal — the numbers
+   here are deliberately absent from the Product Sheet.
+9. **Time Tracking** → *Fill from schedule*, then correct anyone who ran long
    or short.
-9. **Payroll Export** → weekly Excel file.
+10. **Payroll Export** → weekly Excel file.
 
 ## How the app is put together
 
