@@ -9,6 +9,7 @@ import {
   buildPeriodShiftMap, positionRunsSlotInPeriod, positionOpenInPeriod,
   Availability, availableShiftsOn, worksFullDayOn, shiftLengthHours, canWorkLocation,
   skillLabel, LOCATION_LABELS, canWorkAnyPosition, canWorkOn, shiftPeriodFor,
+  patternShiftsOn, weekdayIndex, DAY_LABELS,
 } from '@/lib/types'
 import { autoSchedulePeriod, saveAssignment, removeAssignment, publishPeriod, unpublishPeriod, clearDraftPeriod } from './actions'
 
@@ -439,8 +440,19 @@ export default function ScheduleClient({
       (canWorkLocation(e, 'stadium') && isLocationOpen('stadium', date))
     if (!openSomewhere) return { tone: 'off', text: 'nothing open' }
 
-    if (availableShiftsOn(e, date, availMap.get(`${e.id}:${date}`)).length === 0) {
-      return { tone: 'off', text: 'not available' }
+    // "Not available" comes from one of two places and they're fixed on
+    // different screens, so say which. A standing pattern with no shifts on
+    // this weekday is an Employees setting; a date that differs from it is an
+    // Availability one, and it keeps whatever it was set to even after the
+    // pattern changes — which is how someone stays off a day they now work.
+    const override = availMap.get(`${e.id}:${date}`)
+    if (availableShiftsOn(e, date, override).length === 0) {
+      const patternShifts = patternShiftsOn(e, date)
+      const weekday = DAY_LABELS[weekdayIndex(date)]
+      if (override && patternShifts.length > 0) {
+        return { tone: 'gap', text: `turned off for this date — fix on Availability` }
+      }
+      return { tone: 'off', text: `no ${weekday} in their weekly pattern` }
     }
 
     const cap = e.is_manager ? null : e.max_shifts_per_week

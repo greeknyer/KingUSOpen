@@ -491,6 +491,11 @@ export function availableShiftsOn(
   override?: Availability
 ): ShiftPeriod[] {
   if (!override) return patternShiftsOn(employee, date)
+  // A day marked as a full day is every shift by definition. Checked before
+  // `shifts`, because a row can carry full_day with an empty shift list — and
+  // an empty array is truthy, so it would otherwise read as "no shifts at all"
+  // and take somebody off a day they were explicitly put on.
+  if (override.full_day) return SHIFT_PERIODS.map(s => s.id)
   // shifts is authoritative when set; otherwise fall back to the boolean.
   if (override.shifts) return override.shifts
   return override.available ? patternShiftsOn(employee, date) : []
