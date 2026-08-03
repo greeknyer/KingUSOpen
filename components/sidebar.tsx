@@ -11,12 +11,14 @@ const navItems = [
   { href: '/dashboard/availability', label: 'Availability', icon: '📅' },
   { href: '/dashboard/schedule', label: 'Schedule', icon: '📋' },
   { href: '/dashboard/products', label: 'Product Sheet', icon: '📦' },
-  { href: '/dashboard/inventory', label: 'Total Inventory', icon: '🔒' },
+  // Named accounts only. Dropping it from the menu is a courtesy, not the
+  // protection — that is a row-security policy on the deliveries table.
+  { href: '/dashboard/inventory', label: 'Total Inventory', icon: '🔒', adminOnly: true },
   { href: '/dashboard/timetracking', label: 'Time Tracking', icon: '⏱️' },
   { href: '/dashboard/payroll', label: 'Payroll Export', icon: '💰' },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ isInventoryAdmin = false }: { isInventoryAdmin?: boolean }) {
   const pathname = usePathname()
   const router = useRouter()
 
@@ -38,7 +40,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 p-2 xl:p-3 space-y-1">
-        {navItems.map(item => {
+        {navItems.filter(item => !item.adminOnly || isInventoryAdmin).map(item => {
           const isActive = item.href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname.startsWith(item.href)

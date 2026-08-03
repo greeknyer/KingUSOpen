@@ -19,27 +19,41 @@ function toResult(error: { message: string; code?: string } | null): SaveResult 
 }
 
 /**
+ * Whether this account may see deliveries.
+ *
+ * Asked of the database rather than worked out here, so the answer is the same
+ * one the row-security policy uses — a check the app did on its own could drift
+ * from the check that actually protects the data.
+ */
+export async function canSeeInventory(): Promise<boolean> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('is_inventory_admin')
+  if (error) return false
+  return data === true
+}
+
+/**
  * Record what arrived on a date.
  *
- * Only `delivered` is sent, never `on_hand`. The two share a row but are
- * entered on different screens at different ends of the day, and an upsert
- * carrying both would let this screen quietly overwrite a count taken at the
- * stand — PostgREST only updates the columns present in the payload.
+ * Writes to inventory_deliveries, which only accounts listed in app_admins can
+ * touch — so this fails at the database for anyone else, not merely at the
+ * screen. The counts the product sheet takes are a separate table and are left
+ * alone entirely.
  */
 export async function saveDeliveries(
   year: number,
   date: string,
-  rows: { item_id: string; delivered: number | null }[]
+  rows: { item_id: string; quantity: number | null }[]
 ): Promise<SaveResult> {
   if (rows.length === 0) return { ok: true }
   const supabase = await createClient()
 
-  const { error } = await supabase.from('inventory_counts').upsert(
+  const { error } = await supabase.from('inventory_deliveries').upsert(
     rows.map(r => ({
       year,
       date,
       item_id: r.item_id,
-      delivered: r.delivered,
+      quantity: r.quantity,
       updated_at: new Date().toISOString(),
     })),
     { onConflict: 'date,item_id' }
@@ -47,6 +61,5 @@ export async function saveDeliveries(
   if (error) return toResult(error)
 
   revalidatePath('/dashboard/inventory')
-  revalidatePath('/dashboard/products')
   return { ok: true }
 }

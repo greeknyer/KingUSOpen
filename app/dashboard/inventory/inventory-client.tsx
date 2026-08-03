@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 import {
-  TournamentSettings, InventoryItem, InventoryCount, Location,
+  TournamentSettings, InventoryItem, InventoryCount, InventoryDelivery, Location,
   LOCATION_LABELS, getTournamentDates,
 } from '@/lib/types'
 import { saveDeliveries } from './actions'
@@ -14,14 +14,19 @@ export default function InventoryClient({
   settings,
   items,
   counts,
+  deliveries,
 }: {
   settings: TournamentSettings
   items: InventoryItem[]
   counts: InventoryCount[]
+  deliveries: InventoryDelivery[]
 }) {
   const { allDates } = getTournamentDates(settings)
   const today = new Date().toISOString().split('T')[0]
-  const defaultDate = allDates.includes(today) ? today : (allDates[allDates.length - 1] ?? today)
+  // Today when the tournament is running, otherwise its first day. Falling back
+  // to the LAST day meant opening the screen months beforehand and landing on
+  // the final Sunday, which reads as a bug because nothing is on it.
+  const defaultDate = allDates.includes(today) ? today : (allDates[0] ?? today)
 
   const [location, setLocation] = useState<Location>('food_village')
   const [date, setDate] = useState(defaultDate)
@@ -32,15 +37,22 @@ export default function InventoryClient({
 
   const locationItems = items.filter(i => i.location === location && i.active)
 
-  /** Every row for one product, oldest first. */
-  function rowsFor(itemId: string) {
+  /** Every count for one product, oldest first. */
+  function countsFor(itemId: string) {
     return counts
       .filter(c => c.item_id === itemId)
       .sort((a, b) => a.date.localeCompare(b.date))
   }
 
+  /** Every delivery of one product, oldest first. */
+  function deliveriesFor(itemId: string) {
+    return deliveries
+      .filter(d => d.item_id === itemId)
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }
+
   function deliveredOn(itemId: string, d: string): number | null {
-    return rowsFor(itemId).find(c => c.date === d)?.delivered ?? null
+    return deliveriesFor(itemId).find(x => x.date === d)?.quantity ?? null
   }
 
   function valueFor(itemId: string): string {
@@ -67,16 +79,16 @@ export default function InventoryClient({
    * Subtracting it would report stock that is sitting there as eaten.
    */
   function totalsFor(itemId: string) {
-    const rows = rowsFor(itemId)
-    const received = rows.reduce((sum, c) => sum + (c.delivered ?? 0), 0)
+    const gotIn = deliveriesFor(itemId)
+    const received = gotIn.reduce((sum, d) => sum + (d.quantity ?? 0), 0)
 
-    const counted = rows.filter(c => c.on_hand != null)
+    const counted = countsFor(itemId).filter(c => c.on_hand != null)
     const last = counted[counted.length - 1]
     if (!last) return { received, onHand: null, onHandDate: null, used: null }
 
-    const receivedByThen = rows
-      .filter(c => c.date <= last.date)
-      .reduce((sum, c) => sum + (c.delivered ?? 0), 0)
+    const receivedByThen = gotIn
+      .filter(d => d.date <= last.date)
+      .reduce((sum, d) => sum + (d.quantity ?? 0), 0)
 
     return {
       received,
@@ -91,7 +103,7 @@ export default function InventoryClient({
     const rows = locationItems.map(i => {
       const raw = valueFor(i.id).trim()
       const n = raw === '' ? null : Number(raw)
-      return { item_id: i.id, delivered: raw === '' || Number.isNaN(n!) ? null : n }
+      return { item_id: i.id, quantity: raw === '' || Number.isNaN(n!) ? null : n }
     })
     startTransition(async () => {
       const r = await saveDeliveries(settings.year, date, rows)

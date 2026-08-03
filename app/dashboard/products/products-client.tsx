@@ -23,7 +23,10 @@ export default function ProductsClient({
 }) {
   const { allDates } = getTournamentDates(settings)
   const today = new Date().toISOString().split('T')[0]
-  const defaultDate = allDates.includes(today) ? today : (allDates[allDates.length - 1] ?? today)
+  // Today when the tournament is running, otherwise its first day. Falling back
+  // to the LAST day meant opening the screen months beforehand and landing on
+  // the final Sunday, which reads as a bug because nothing is on it.
+  const defaultDate = allDates.includes(today) ? today : (allDates[0] ?? today)
 
   const [location, setLocation] = useState<Location>('food_village')
   const [date, setDate] = useState(defaultDate)

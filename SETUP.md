@@ -33,6 +33,7 @@ one is harmless.
 | `019_stadium_mid_times` | that shift runs noon to 8pm |
 | `020_product_sheet` | product lists and daily counts per location |
 | `021_inventory_deliveries` | what the warehouse delivered, for the totals screen |
+| `022_inventory_access` | Total Inventory limited to named accounts |
 
 > The grants at the end of `schema.sql` are load-bearing. PostgREST only exposes
 > tables the API roles hold privileges on — without them every table returns
@@ -83,8 +84,20 @@ Each step feeds the next, so it's worth doing them in this order.
    then count what's left at the end of each day and photograph it. This is the
    only inventory screen the warehouse sees.
 8. **Total Inventory** → enter each morning's delivery. Shows what has been
-   received across the tournament and what has gone out. Internal — the numbers
-   here are deliberately absent from the Product Sheet.
+   received across the tournament and what has gone out. Limited to the accounts
+   listed in `app_admins`, and absent from the Product Sheet entirely.
+
+   To let somebody else see it, add their login email in the Supabase SQL editor:
+
+   ```sql
+   insert into app_admins (email, note) values ('them@example.com', 'GM');
+   ```
+
+   The table is deliberately unreadable through the API — the check runs inside
+   a SECURITY DEFINER function so the list of privileged addresses isn't exposed
+   to the users it excludes. Row security on `inventory_deliveries` is what
+   enforces this; hiding the menu item is only a courtesy, since any signed-in
+   user's token could otherwise query the table directly.
 9. **Time Tracking** → *Fill from schedule*, then correct anyone who ran long
    or short.
 10. **Payroll Export** → weekly Excel file.

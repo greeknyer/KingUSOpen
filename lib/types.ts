@@ -323,7 +323,7 @@ export interface InventoryItem {
   active: boolean
 }
 
-/** What happened to one product on one date: what arrived, and what was left. */
+/** How many of one product were left on one date. Readable by any account. */
 export interface InventoryCount {
   id: string
   year: number
@@ -331,8 +331,22 @@ export interface InventoryCount {
   item_id: string
   /** NULL means not counted yet, which is not the same as a counted zero. */
   on_hand: number | null
-  /** How many arrived that day, opening stock included. NULL = no delivery. */
-  delivered: number | null
+}
+
+/**
+ * How many of one product arrived on one date, opening stock included.
+ *
+ * A separate table from the counts rather than a column on them, because row
+ * security works per row: there is no way to hide one column from an account
+ * that may read the rest of it. Only accounts listed in app_admins can read or
+ * write these.
+ */
+export interface InventoryDelivery {
+  id: string
+  year: number
+  date: string
+  item_id: string
+  quantity: number | null
 }
 
 /** How many lines each location's sheet is expected to have. */
